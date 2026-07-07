@@ -347,7 +347,7 @@ button:disabled,
 }
 
 .readout {
-  bottom: calc(78px + env(safe-area-inset-bottom));
+  bottom: calc(132px + env(safe-area-inset-bottom));
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;

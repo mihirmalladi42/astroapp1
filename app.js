@@ -11,6 +11,7 @@ const state = {
   fov: 2,
   pixels: 768,
   target: null,
+  annotatedImageUrl: "",
 };
 
 const camera = document.querySelector("#camera");
@@ -225,13 +226,18 @@ function resolveSky(force) {
   const key = `${Math.round(equatorial.raDeg * 20)}:${Math.round(equatorial.decDeg * 20)}`;
   if (!force && key === state.lastResolvedKey) return;
 
+  const resolvedAt = new Date();
   const url = skyViewUrl(equatorial.raDeg, equatorial.decDeg);
   state.lastResolvedAt = Date.now();
   state.lastResolvedKey = key;
   skyImage.removeAttribute("src");
   skyImage.classList.remove("visible");
-  imageLink.href = url;
-  imageLink.classList.remove("disabled");
+  setResolvedImageLink(url, {
+    utc: formatUtc(resolvedAt),
+    coords: formatCoords(state.location.lat, state.location.lon),
+    ra: formatRa(equatorial.raDeg),
+    dec: `${equatorial.decDeg.toFixed(2)} deg`,
+  });
   restartCameraButton.classList.remove("hidden");
   setStatus(`Resolved image link ready: RA ${formatRa(equatorial.raDeg)}, Dec ${equatorial.decDeg.toFixed(2)} deg.`);
 }
@@ -302,14 +308,20 @@ function renderCatalogResults() {
 }
 
 function resolveCatalogObject(object) {
+  const resolvedAt = new Date();
   const url = skyViewUrl(object.ra, object.dec);
   state.target = object;
   state.lastResolvedAt = Date.now();
   state.lastResolvedKey = `catalog:${object.id}`;
   skyImage.removeAttribute("src");
   skyImage.classList.remove("visible");
-  imageLink.href = url;
-  imageLink.classList.remove("disabled");
+  setResolvedImageLink(url, {
+    object: object.name === object.id ? object.id : `${object.id} - ${object.name}`,
+    utc: formatUtc(resolvedAt),
+    coords: state.location ? formatCoords(state.location.lat, state.location.lon) : "Coords unavailable",
+    ra: formatRa(object.ra),
+    dec: `${object.dec.toFixed(2)} deg`,
+  });
   restartCameraButton.classList.remove("hidden");
   raValue.textContent = formatRa(object.ra);
   decValue.textContent = `${object.dec.toFixed(2)} deg`;
@@ -411,6 +423,7 @@ async function restartLiveCamera() {
   setStatus("Restoring live camera for the next target.");
   imageLink.href = "https://skyview.gsfc.nasa.gov/current/cgi/query.pl";
   imageLink.classList.add("disabled");
+  clearAnnotatedImageUrl();
   restartCameraButton.classList.add("hidden");
   state.lastResolvedKey = "";
 
@@ -441,6 +454,42 @@ function skyViewUrl(raDeg, decDeg) {
   });
 
   return `${SKYVIEW_ENDPOINT}?${params.toString()}`;
+}
+
+function setResolvedImageLink(imageUrl, metadata) {
+  clearAnnotatedImageUrl();
+  state.annotatedImageUrl = annotatedImageUrl(imageUrl, metadata);
+  imageLink.href = state.annotatedImageUrl;
+  imageLink.classList.remove("disabled");
+}
+
+function clearAnnotatedImageUrl() {
+  if (state.annotatedImageUrl) {
+    URL.revokeObjectURL(state.annotatedImageUrl);
+    state.annotatedImageUrl = "";
+  }
+}
+
+function annotatedImageUrl(imageUrl, metadata) {
+  const lines = [
+    metadata.object ? `Object: ${metadata.object}` : "",
+    `UTC: ${metadata.utc}`,
+    `Coords: ${metadata.coords}`,
+    `RA: ${metadata.ra}   Dec: ${metadata.dec}`,
+  ].filter(Boolean);
+  const lineHeight = 27;
+  const padding = 18;
+  const bandHeight = padding * 2 + lineHeight * lines.length;
+  const textStartY = state.pixels - bandHeight + padding + 18;
+  const textLines = lines
+    .map((line, index) => `<text x="18" y="${textStartY + index * lineHeight}">${escapeXml(line)}</text>`)
+    .join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${state.pixels}" height="${state.pixels}" viewBox="0 0 ${state.pixels} ${state.pixels}">
+  <image href="${escapeXml(imageUrl)}" x="0" y="0" width="${state.pixels}" height="${state.pixels}" preserveAspectRatio="xMidYMid slice"/>
+  <rect x="0" y="${state.pixels - bandHeight}" width="${state.pixels}" height="${bandHeight}" fill="#000" opacity="0.72"/>
+  <g fill="#ff2b2b" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">${textLines}</g>
+</svg>`;
+  return URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
 }
 
 function horizontalToEquatorial(azDeg, altDeg, latDeg, lonDeg, date) {
@@ -519,6 +568,16 @@ function formatCoords(latDeg, lonDeg) {
   const latSuffix = latDeg >= 0 ? "N" : "S";
   const lonSuffix = lonDeg >= 0 ? "E" : "W";
   return `${Math.abs(latDeg).toFixed(5)} ${latSuffix}, ${Math.abs(lonDeg).toFixed(5)} ${lonSuffix}`;
+}
+
+function escapeXml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&apos;",
+  })[character]);
 }
 
 function signedDeltaDeg(toDeg, fromDeg) {
