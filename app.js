@@ -11,8 +11,8 @@ const state = {
   fov: 2,
   pixels: 768,
   target: null,
-  annotatedImageUrl: "",
-  annotatedImageRequestId: 0,
+  resolvedImage: null,
+  resolvedViewerUrl: "",
 };
 
 const camera = document.querySelector("#camera");
@@ -52,6 +52,7 @@ catalogSearch.addEventListener("input", renderCatalogResults);
 catalogFilter.addEventListener("change", renderCatalogResults);
 typeFilter.addEventListener("change", renderCatalogResults);
 resolveButton.addEventListener("click", () => resolveSky(true));
+downloadLink.addEventListener("click", downloadResolvedImage);
 restartCameraButton.addEventListener("click", restartLiveCamera);
 
 renderCatalogResults();
@@ -432,7 +433,7 @@ async function restartLiveCamera() {
   downloadLink.href = "https://skyview.gsfc.nasa.gov/current/cgi/query.pl";
   downloadLink.removeAttribute("download");
   downloadLink.classList.add("disabled");
-  clearAnnotatedImageUrl();
+  clearResolvedImage();
   restartCameraButton.classList.add("hidden");
   state.lastResolvedKey = "";
 
@@ -466,42 +467,52 @@ function skyViewUrl(raDeg, decDeg) {
 }
 
 function setResolvedImageLink(imageUrl, metadata) {
-  clearAnnotatedImageUrl();
-  const requestId = state.annotatedImageRequestId + 1;
-  state.annotatedImageRequestId = requestId;
-  state.annotatedImageUrl = annotatedImageUrl(imageUrl, metadata);
-  imageLink.href = state.annotatedImageUrl;
+  clearResolvedImage();
+  state.resolvedImage = { imageUrl, metadata };
+  state.resolvedViewerUrl = annotatedViewerUrl(imageUrl, metadata);
+  imageLink.href = state.resolvedViewerUrl;
   imageLink.classList.remove("disabled");
-  downloadLink.href = state.annotatedImageUrl;
-  downloadLink.download = `${metadata.filenameBase || "resolved_sky_image"}.svg`;
+  downloadLink.href = imageUrl;
+  downloadLink.download = `${metadata.filenameBase || "resolved_sky_image"}.png`;
   downloadLink.classList.remove("disabled");
-
-  annotatedPngUrl(imageUrl, metadata)
-    .then((pngUrl) => {
-      if (state.annotatedImageRequestId !== requestId) {
-        URL.revokeObjectURL(pngUrl);
-        return;
-      }
-      clearAnnotatedImageUrl();
-      state.annotatedImageUrl = pngUrl;
-      imageLink.href = pngUrl;
-      downloadLink.href = pngUrl;
-      downloadLink.download = `${metadata.filenameBase || "resolved_sky_image"}.png`;
-    })
-    .catch(() => {
-      // Some image servers block browser-side rasterization. The SVG fallback remains usable.
-    });
 }
 
-function clearAnnotatedImageUrl() {
-  state.annotatedImageRequestId += 1;
-  if (state.annotatedImageUrl) {
-    URL.revokeObjectURL(state.annotatedImageUrl);
-    state.annotatedImageUrl = "";
+function clearResolvedImage() {
+  state.resolvedImage = null;
+  if (state.resolvedViewerUrl) {
+    URL.revokeObjectURL(state.resolvedViewerUrl);
+    state.resolvedViewerUrl = "";
   }
 }
 
-function annotatedImageUrl(imageUrl, metadata) {
+function annotatedViewerUrl(imageUrl, metadata) {
+  const overlay = annotationLines(metadata)
+    .map((line) => `<div>${escapeHtml(line)}</div>`)
+    .join("");
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(metadata.filenameBase || "Resolved sky image")}</title>
+<style>
+html,body{margin:0;min-height:100%;background:#000;color:#ff2b2b;font-family:Arial,Helvetica,sans-serif}
+.wrap{position:relative;min-height:100vh;display:grid;place-items:center;background:#000}
+img{max-width:100vw;max-height:100vh;display:block}
+.meta{position:absolute;left:0;right:0;bottom:0;padding:18px;background:rgba(0,0,0,.72);color:#ff2b2b;font-size:clamp(14px,3.5vw,22px);font-weight:700;line-height:1.3}
+</style>
+</head>
+<body>
+<main class="wrap">
+<img src="${escapeHtml(imageUrl)}" alt="Resolved sky image">
+<section class="meta">${overlay}</section>
+</main>
+</body>
+</html>`;
+  return URL.createObjectURL(new Blob([html], { type: "text/html" }));
+}
+
+function annotatedSvgBlob(imageUrl, metadata) {
   const lines = [
     metadata.object ? `Object: ${metadata.object}` : "",
     `UTC: ${metadata.utc}`,
@@ -520,10 +531,28 @@ function annotatedImageUrl(imageUrl, metadata) {
   <rect x="0" y="${state.pixels - bandHeight}" width="${state.pixels}" height="${bandHeight}" fill="#000" opacity="0.72"/>
   <g fill="#ff2b2b" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">${textLines}</g>
 </svg>`;
-  return URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  return new Blob([svg], { type: "image/svg+xml" });
 }
 
-async function annotatedPngUrl(imageUrl, metadata) {
+async function downloadResolvedImage(event) {
+  event.preventDefault();
+  if (!state.resolvedImage || downloadLink.classList.contains("disabled")) return;
+
+  const { imageUrl, metadata } = state.resolvedImage;
+  const filenameBase = metadata.filenameBase || "resolved_sky_image";
+
+  try {
+    const pngBlob = await annotatedPngBlob(imageUrl, metadata);
+    await saveBlob(pngBlob, `${filenameBase}.png`);
+    setStatus("Annotated resolved image download started.");
+  } catch (error) {
+    const svgBlob = annotatedSvgBlob(imageUrl, metadata);
+    await saveBlob(svgBlob, `${filenameBase}.svg`);
+    setStatus("Annotated resolved image download started as SVG.");
+  }
+}
+
+async function annotatedPngBlob(imageUrl, metadata) {
   const response = await fetch(imageUrl);
   if (!response.ok) throw new Error("Could not fetch resolved image.");
 
@@ -537,12 +566,7 @@ async function annotatedPngUrl(imageUrl, metadata) {
     const context = canvas.getContext("2d");
     context.drawImage(image, 0, 0, state.pixels, state.pixels);
 
-    const lines = [
-      metadata.object ? `Object: ${metadata.object}` : "",
-      `UTC: ${metadata.utc}`,
-      `Coords: ${metadata.coords}`,
-      `RA: ${metadata.ra}   Dec: ${metadata.dec}`,
-    ].filter(Boolean);
+    const lines = annotationLines(metadata);
     const lineHeight = 27;
     const padding = 18;
     const bandHeight = padding * 2 + lineHeight * lines.length;
@@ -562,10 +586,39 @@ async function annotatedPngUrl(imageUrl, metadata) {
         else reject(new Error("Could not create annotated PNG."));
       }, "image/png");
     });
-    return URL.createObjectURL(blob);
+    return blob;
   } finally {
     URL.revokeObjectURL(sourceUrl);
   }
+}
+
+async function saveBlob(blob, filename) {
+  if (navigator.canShare && navigator.share) {
+    const file = new File([blob], filename, { type: blob.type });
+    if (navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename });
+      return;
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = "noreferrer";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+function annotationLines(metadata) {
+  return [
+    metadata.object ? `Object: ${metadata.object}` : "",
+    `UTC: ${metadata.utc}`,
+    `Coords: ${metadata.coords}`,
+    `RA: ${metadata.ra}   Dec: ${metadata.dec}`,
+  ].filter(Boolean);
 }
 
 function loadImage(url) {
@@ -704,6 +757,16 @@ function escapeXml(value) {
     ">": "&gt;",
     "\"": "&quot;",
     "'": "&apos;",
+  })[character]);
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
   })[character]);
 }
 
