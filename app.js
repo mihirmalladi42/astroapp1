@@ -239,6 +239,12 @@ function toggleCatalogPanel() {
 }
 
 function renderCatalogResults() {
+  if (!catalog.objects.length) {
+    catalogCount.textContent = "Catalog did not load.";
+    catalogResults.innerHTML = "";
+    return;
+  }
+
   const query = catalogSearch.value.trim().toLowerCase();
   const selectedCatalog = catalogFilter.value;
   const selectedType = typeFilter.value;
