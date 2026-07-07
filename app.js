@@ -43,6 +43,7 @@ const coordsValue = document.querySelector("#coordsValue");
 const DEG = Math.PI / 180;
 const RAD = 180 / Math.PI;
 const MAX_RESULTS = 60;
+const infoCache = new Map();
 
 startButton.addEventListener("click", startExperience);
 catalogButton.addEventListener("click", toggleCatalogPanel);
@@ -284,12 +285,21 @@ function renderCatalogResults() {
     meta.textContent = `${catalogLabel(object.catalog)} | ${typeLabel(object.type)} | RA ${object.ra.toFixed(4)} deg, Dec ${object.dec.toFixed(4)} deg`;
     details.append(title, meta);
 
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = "Guide";
-    button.addEventListener("click", () => resolveCatalogObject(object));
+    const actions = document.createElement("div");
+    actions.className = "catalog-actions";
 
-    row.append(details, button);
+    const infoButton = document.createElement("button");
+    infoButton.type = "button";
+    infoButton.textContent = "Info";
+    infoButton.addEventListener("click", () => showCatalogInfo(object, row, infoButton));
+
+    const guideButton = document.createElement("button");
+    guideButton.type = "button";
+    guideButton.textContent = "Guide";
+    guideButton.addEventListener("click", () => resolveCatalogObject(object));
+
+    actions.append(infoButton, guideButton);
+    row.append(details, actions);
     catalogResults.append(row);
   }
 
@@ -299,6 +309,88 @@ function renderCatalogResults() {
     empty.textContent = "No matches.";
     catalogResults.append(empty);
   }
+}
+
+async function showCatalogInfo(object, row, button) {
+  const existing = row.querySelector(".catalog-info");
+  if (existing) {
+    existing.classList.toggle("hidden");
+    return;
+  }
+
+  const info = document.createElement("p");
+  info.className = "catalog-info";
+  info.textContent = "Loading info...";
+  row.append(info);
+
+  button.disabled = true;
+  try {
+    const details = await objectInfo(object);
+    info.textContent = details.text;
+
+    if (details.url) {
+      const source = document.createElement("a");
+      source.href = details.url;
+      source.target = "_blank";
+      source.rel = "noreferrer";
+      source.textContent = " Source";
+      info.append(source);
+    }
+  } catch (error) {
+    info.textContent = localObjectInfo(object);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function objectInfo(object) {
+  const key = object.id;
+  if (infoCache.has(key)) return infoCache.get(key);
+
+  const summary = await wikipediaSummary(object);
+  const result = summary
+    ? { text: summary.extract, url: summary.content_urls?.desktop?.page || summary.content_urls?.mobile?.page || "" }
+    : { text: localObjectInfo(object), url: "" };
+  infoCache.set(key, result);
+  return result;
+}
+
+async function wikipediaSummary(object) {
+  const query = wikipediaQuery(object);
+  const searchUrl = `https://en.wikipedia.org/w/api.php?${new URLSearchParams({
+    action: "query",
+    list: "search",
+    srsearch: query,
+    srlimit: "1",
+    format: "json",
+    origin: "*",
+  }).toString()}`;
+  const searchResponse = await fetch(searchUrl);
+  if (!searchResponse.ok) return null;
+
+  const searchData = await searchResponse.json();
+  const title = searchData.query?.search?.[0]?.title;
+  if (!title) return null;
+
+  const summaryResponse = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
+  if (!summaryResponse.ok) return null;
+
+  const summary = await summaryResponse.json();
+  if (!summary.extract || summary.type === "disambiguation") return null;
+  return summary;
+}
+
+function wikipediaQuery(object) {
+  if (object.catalog === "messier") return `${object.id.replace(/^M/i, "Messier ")} astronomy`;
+  if (object.catalog === "ngc") return `${object.id} astronomy`;
+  if (object.catalog === "caldwell") return `${object.name} ${object.id} astronomy`;
+  if (object.catalog === "star") return `${object.name} star`;
+  return `${object.name || object.id} astronomy`;
+}
+
+function localObjectInfo(object) {
+  const title = object.name === object.id ? object.id : `${object.id} (${object.name})`;
+  return `${title} is listed locally as ${catalogLabel(object.catalog)} / ${typeLabel(object.type)} at RA ${formatRa(object.ra)} and Dec ${formatDec(object.dec)}. Discovery date, discoverer, and distance were not available from the live info source.`;
 }
 
 function resolveCatalogObject(object) {
