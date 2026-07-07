@@ -230,6 +230,14 @@ button:disabled,
   gap: 10px;
 }
 
+.wide-control {
+  grid-column: 1 / -1;
+}
+
+.hidden {
+  display: none;
+}
+
 @media (min-width: 720px) {
   .viewer {
     max-width: 480px;

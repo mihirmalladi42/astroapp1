@@ -17,6 +17,7 @@ const skyImage = document.querySelector("#skyImage");
 const startButton = document.querySelector("#startButton");
 const resolveButton = document.querySelector("#resolveButton");
 const imageLink = document.querySelector("#imageLink");
+const restartCameraButton = document.querySelector("#restartCameraButton");
 const statusEl = document.querySelector("#status");
 const azimuthValue = document.querySelector("#azimuthValue");
 const altitudeValue = document.querySelector("#altitudeValue");
@@ -30,6 +31,7 @@ const RAD = 180 / Math.PI;
 
 startButton.addEventListener("click", startExperience);
 resolveButton.addEventListener("click", () => resolveSky(true));
+restartCameraButton.addEventListener("click", restartLiveCamera);
 
 function setStatus(message) {
   statusEl.textContent = message;
@@ -209,7 +211,29 @@ function resolveSky(force) {
   skyImage.classList.remove("visible");
   imageLink.href = url;
   imageLink.classList.remove("disabled");
+  restartCameraButton.classList.remove("hidden");
   setStatus(`Resolved image link ready: RA ${formatRa(equatorial.raDeg)}, Dec ${equatorial.decDeg.toFixed(2)} deg.`);
+}
+
+async function restartLiveCamera() {
+  setStatus("Restoring live camera for the next target.");
+  imageLink.href = "https://skyview.gsfc.nasa.gov/current/cgi/query.pl";
+  imageLink.classList.add("disabled");
+  restartCameraButton.classList.add("hidden");
+  state.lastResolvedKey = "";
+
+  try {
+    if (!state.stream || !state.stream.getVideoTracks().some((track) => track.readyState === "live")) {
+      await startCamera();
+    } else {
+      camera.srcObject = state.stream;
+      await camera.play();
+    }
+    setStatus("Live camera ready. Point at another target, then tap Resolve.");
+  } catch (error) {
+    restartCameraButton.classList.remove("hidden");
+    setStatus(error.message || "Could not restart the live camera.");
+  }
 }
 
 function skyViewUrl(raDeg, decDeg) {
