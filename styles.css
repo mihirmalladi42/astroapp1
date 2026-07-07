@@ -22,15 +22,29 @@ body {
 }
 
 button,
-.image-link {
+.image-link,
+input,
+select {
   border: 0;
   border-radius: 8px;
   min-height: 44px;
   padding: 0 16px;
   font: inherit;
+}
+
+button,
+.image-link {
   font-weight: 750;
   color: #071014;
   background: #8ee7ff;
+}
+
+input,
+select {
+  width: 100%;
+  color: #f4f7fb;
+  background: rgba(255, 255, 255, 0.12);
+  outline: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 button:disabled,
@@ -153,8 +167,16 @@ button:disabled,
   gap: 12px;
 }
 
-.top-bar > div,
-.readout {
+.top-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  width: min(31vw, 132px);
+}
+
+.top-bar > .status-card,
+.readout,
+.catalog-panel {
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
   background: rgba(5, 7, 10, 0.7);
@@ -162,7 +184,7 @@ button:disabled,
   backdrop-filter: blur(18px);
 }
 
-.top-bar > div {
+.top-bar > .status-card {
   min-width: 0;
   padding: 10px 12px;
 }
@@ -185,6 +207,83 @@ button:disabled,
   font-size: 0.88rem;
   line-height: 1.25;
   color: #f4f7fb;
+}
+
+.catalog-panel {
+  position: absolute;
+  left: max(14px, env(safe-area-inset-left));
+  right: max(14px, env(safe-area-inset-right));
+  top: calc(116px + env(safe-area-inset-top));
+  z-index: 5;
+  max-height: calc(100dvh - 330px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  min-height: 170px;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.catalog-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.catalog-grid label {
+  min-width: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #afbac5;
+}
+
+.catalog-grid input,
+.catalog-grid select {
+  margin-top: 4px;
+}
+
+.catalog-count {
+  margin: 9px 2px 8px;
+  font-size: 0.72rem;
+  color: #afbac5;
+}
+
+.catalog-results {
+  display: grid;
+  gap: 7px;
+  max-height: calc(100dvh - 470px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.catalog-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.catalog-result strong,
+.catalog-result span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-result strong {
+  font-size: 0.9rem;
+}
+
+.catalog-result span {
+  margin-top: 2px;
+  font-size: 0.72rem;
+  color: #afbac5;
+}
+
+.catalog-result button {
+  min-height: 38px;
+  padding: 0 12px;
 }
 
 .readout {

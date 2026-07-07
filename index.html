@@ -15,12 +15,45 @@
           <span></span>
         </div>
         <div class="top-bar">
-          <div>
+          <div class="status-card">
             <p class="label">Sky Lens</p>
             <p id="status">Start sensors to resolve the camera center.</p>
           </div>
-          <button id="startButton" type="button">Start</button>
+          <div class="top-actions">
+            <button id="catalogButton" type="button">Catalog</button>
+            <button id="startButton" type="button">Start</button>
+          </div>
         </div>
+        <section id="catalogPanel" class="catalog-panel hidden" aria-label="Catalog search">
+          <div class="catalog-grid">
+            <label class="wide-control">
+              Search
+              <input id="catalogSearch" type="search" autocomplete="off" placeholder="M31, NGC 7000, Polaris">
+            </label>
+            <label>
+              Catalog
+              <select id="catalogFilter">
+                <option value="all">All</option>
+                <option value="ngc">NGC</option>
+                <option value="messier">Messier</option>
+                <option value="caldwell">Caldwell</option>
+                <option value="star">Stars</option>
+              </select>
+            </label>
+            <label>
+              Type
+              <select id="typeFilter">
+                <option value="all">All</option>
+                <option value="galaxy">Galaxy</option>
+                <option value="nebula">Nebula</option>
+                <option value="cluster">Cluster</option>
+                <option value="star">Star</option>
+              </select>
+            </label>
+          </div>
+          <p id="catalogCount" class="catalog-count">Loading catalog...</p>
+          <div id="catalogResults" class="catalog-results"></div>
+        </section>
         <div class="readout" aria-live="polite">
           <div>
             <span>Az</span>
@@ -54,6 +87,7 @@
         </div>
       </section>
     </main>
+    <script src="catalog.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

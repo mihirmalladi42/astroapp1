@@ -14,7 +14,15 @@ const state = {
 
 const camera = document.querySelector("#camera");
 const skyImage = document.querySelector("#skyImage");
+const catalog = window.ASTRO_CATALOG || { objects: [], counts: {} };
 const startButton = document.querySelector("#startButton");
+const catalogButton = document.querySelector("#catalogButton");
+const catalogPanel = document.querySelector("#catalogPanel");
+const catalogSearch = document.querySelector("#catalogSearch");
+const catalogFilter = document.querySelector("#catalogFilter");
+const typeFilter = document.querySelector("#typeFilter");
+const catalogCount = document.querySelector("#catalogCount");
+const catalogResults = document.querySelector("#catalogResults");
 const resolveButton = document.querySelector("#resolveButton");
 const imageLink = document.querySelector("#imageLink");
 const restartCameraButton = document.querySelector("#restartCameraButton");
@@ -28,10 +36,17 @@ const coordsValue = document.querySelector("#coordsValue");
 
 const DEG = Math.PI / 180;
 const RAD = 180 / Math.PI;
+const MAX_RESULTS = 60;
 
 startButton.addEventListener("click", startExperience);
+catalogButton.addEventListener("click", toggleCatalogPanel);
+catalogSearch.addEventListener("input", renderCatalogResults);
+catalogFilter.addEventListener("change", renderCatalogResults);
+typeFilter.addEventListener("change", renderCatalogResults);
 resolveButton.addEventListener("click", () => resolveSky(true));
 restartCameraButton.addEventListener("click", restartLiveCamera);
+
+renderCatalogResults();
 
 function setStatus(message) {
   statusEl.textContent = message;
@@ -213,6 +228,134 @@ function resolveSky(force) {
   imageLink.classList.remove("disabled");
   restartCameraButton.classList.remove("hidden");
   setStatus(`Resolved image link ready: RA ${formatRa(equatorial.raDeg)}, Dec ${equatorial.decDeg.toFixed(2)} deg.`);
+}
+
+function toggleCatalogPanel() {
+  catalogPanel.classList.toggle("hidden");
+  if (!catalogPanel.classList.contains("hidden")) {
+    catalogSearch.focus();
+    renderCatalogResults();
+  }
+}
+
+function renderCatalogResults() {
+  const query = catalogSearch.value.trim().toLowerCase();
+  const selectedCatalog = catalogFilter.value;
+  const selectedType = typeFilter.value;
+  const matches = [];
+
+  for (const object of catalog.objects) {
+    if (selectedCatalog !== "all" && object.catalog !== selectedCatalog) continue;
+    if (!matchesType(object, selectedType)) continue;
+    if (query && !searchText(object).includes(query)) continue;
+    matches.push(object);
+  }
+
+  if (query) {
+    matches.sort((a, b) => relevanceScore(a, query) - relevanceScore(b, query));
+  }
+
+  const visibleMatches = matches.slice(0, MAX_RESULTS);
+
+  const totalText = catalog.counts.total ? `${catalog.counts.total.toLocaleString()} objects` : "catalog";
+  catalogCount.textContent = `${visibleMatches.length.toLocaleString()} shown from ${matches.length.toLocaleString()} matches in ${totalText}`;
+  catalogResults.innerHTML = "";
+
+  for (const object of visibleMatches) {
+    const row = document.createElement("div");
+    row.className = "catalog-result";
+
+    const details = document.createElement("div");
+    const title = document.createElement("strong");
+    const meta = document.createElement("span");
+    title.textContent = object.name === object.id ? object.id : `${object.id} - ${object.name}`;
+    meta.textContent = `${catalogLabel(object.catalog)} | ${typeLabel(object.type)} | RA ${object.ra.toFixed(4)} deg, Dec ${object.dec.toFixed(4)} deg`;
+    details.append(title, meta);
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Use";
+    button.addEventListener("click", () => resolveCatalogObject(object));
+
+    row.append(details, button);
+    catalogResults.append(row);
+  }
+
+  if (visibleMatches.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "catalog-count";
+    empty.textContent = "No matches.";
+    catalogResults.append(empty);
+  }
+}
+
+function resolveCatalogObject(object) {
+  const url = skyViewUrl(object.ra, object.dec);
+  state.lastResolvedAt = Date.now();
+  state.lastResolvedKey = `catalog:${object.id}`;
+  skyImage.removeAttribute("src");
+  skyImage.classList.remove("visible");
+  imageLink.href = url;
+  imageLink.classList.remove("disabled");
+  restartCameraButton.classList.remove("hidden");
+  raValue.textContent = formatRa(object.ra);
+  decValue.textContent = `${object.dec.toFixed(2)} deg`;
+  catalogPanel.classList.add("hidden");
+  setStatus(`Catalog target ready: ${object.id} at RA ${formatRa(object.ra)}, Dec ${object.dec.toFixed(2)} deg.`);
+}
+
+function searchText(object) {
+  return [object.id, object.name, object.catalog, object.type, ...(object.aliases || [])]
+    .join(" ")
+    .toLowerCase();
+}
+
+function relevanceScore(object, query) {
+  const id = object.id.toLowerCase();
+  const name = object.name.toLowerCase();
+  const aliases = (object.aliases || []).map((alias) => alias.toLowerCase());
+
+  if (id === query || name === query) return 0;
+  if (id.startsWith(query) || name.startsWith(query)) return 1;
+  if (aliases.some((alias) => alias === query)) return 2;
+  if (aliases.some((alias) => alias.startsWith(query))) return 3;
+  return 4;
+}
+
+function matchesType(object, selectedType) {
+  if (selectedType === "all") return true;
+  const type = String(object.type || "").toLowerCase();
+  const text = `${type} ${object.name || ""} ${object.id || ""}`.toLowerCase();
+
+  if (selectedType === "galaxy") {
+    return object.catalog !== "star"
+      && (type === "g" || type.startsWith("gip") || type.startsWith("gx") || text.includes("gal") || text.includes("agn"));
+  }
+  if (selectedType === "nebula") {
+    return type === "pn" || type === "pl" || text.includes("neb") || type.includes("nb") || text.includes("snr");
+  }
+  if (selectedType === "cluster") {
+    return type === "oc" || type === "gb" || type.includes("cl") || text.includes("cluster");
+  }
+  if (selectedType === "star") {
+    return object.catalog === "star" || text.includes("star") || text.includes("*");
+  }
+
+  return true;
+}
+
+function catalogLabel(value) {
+  const labels = {
+    ngc: "NGC",
+    messier: "Messier",
+    caldwell: "Caldwell",
+    star: "Star",
+  };
+  return labels[value] || value;
+}
+
+function typeLabel(value) {
+  return value || "Object";
 }
 
 async function restartLiveCamera() {
