@@ -155,7 +155,7 @@ function getCameraAltitude(event) {
   const rollPenalty = Math.abs(gamma) * 0.35;
   const sign = beta >= 0 ? 1 : -1;
 
-  return sign * (forwardTilt - rollPenalty);
+  return -sign * (forwardTilt - rollPenalty);
 }
 
 function renderPointing() {
