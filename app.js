@@ -50,6 +50,7 @@ catalogSearch.addEventListener("input", renderCatalogResults);
 catalogFilter.addEventListener("change", renderCatalogResults);
 typeFilter.addEventListener("change", renderCatalogResults);
 resolveButton.addEventListener("click", () => resolveSky(true));
+imageLink.addEventListener("click", openResolvedImage);
 restartCameraButton.addEventListener("click", restartLiveCamera);
 
 renderCatalogResults();
@@ -536,6 +537,13 @@ function skyViewUrl(raDeg, decDeg) {
 function setResolvedImageLink(imageUrl) {
   imageLink.href = imageUrl;
   imageLink.classList.remove("disabled");
+}
+
+function openResolvedImage(event) {
+  if (imageLink.classList.contains("disabled")) return;
+
+  event.preventDefault();
+  window.open(imageLink.href, "_blank", "noopener,noreferrer");
 }
 
 function horizontalToEquatorial(azDeg, altDeg, latDeg, lonDeg, date) {
