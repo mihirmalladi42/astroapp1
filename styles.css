@@ -1,0 +1,228 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #05070a;
+  color: #f4f7fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: #05070a;
+}
+
+button {
+  border: 0;
+  border-radius: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  font: inherit;
+  font-weight: 750;
+  color: #071014;
+  background: #8ee7ff;
+}
+
+button:disabled {
+  color: #8f9ba7;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.app-shell {
+  width: 100vw;
+  min-height: 100dvh;
+  background: #05070a;
+}
+
+.viewer {
+  position: relative;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at center, rgba(142, 231, 255, 0.12), transparent 34%),
+    #05070a;
+}
+
+#camera,
+#skyImage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#camera {
+  z-index: 1;
+  background: #05070a;
+}
+
+#skyImage {
+  z-index: 2;
+  opacity: 0;
+  mix-blend-mode: screen;
+  filter: saturate(1.2) contrast(1.05);
+  transition: opacity 220ms ease;
+  pointer-events: none;
+}
+
+#skyImage.visible {
+  opacity: 0.72;
+}
+
+.reticle {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.reticle::before,
+.reticle::after,
+.reticle span::before,
+.reticle span::after {
+  content: "";
+  position: absolute;
+  background: rgba(244, 247, 251, 0.86);
+  box-shadow: 0 0 12px rgba(142, 231, 255, 0.72);
+}
+
+.reticle::before,
+.reticle::after {
+  width: 54px;
+  height: 2px;
+}
+
+.reticle::after {
+  transform: rotate(90deg);
+}
+
+.reticle span {
+  width: 84px;
+  height: 84px;
+  border: 1px solid rgba(244, 247, 251, 0.7);
+  border-radius: 50%;
+}
+
+.reticle span::before,
+.reticle span::after {
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.top-bar,
+.readout,
+.controls {
+  position: absolute;
+  left: max(14px, env(safe-area-inset-left));
+  right: max(14px, env(safe-area-inset-right));
+  z-index: 4;
+}
+
+.top-bar {
+  top: max(14px, env(safe-area-inset-top));
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.top-bar > div,
+.readout {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(5, 7, 10, 0.7);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(18px);
+}
+
+.top-bar > div {
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.label,
+#status {
+  margin: 0;
+}
+
+.label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #8ee7ff;
+  text-transform: uppercase;
+}
+
+#status {
+  max-width: 58vw;
+  margin-top: 4px;
+  font-size: 0.88rem;
+  line-height: 1.25;
+  color: #f4f7fb;
+}
+
+.readout {
+  bottom: calc(78px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+}
+
+.readout div {
+  min-width: 0;
+  padding: 10px 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.readout span,
+.readout strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.readout span {
+  font-size: 0.68rem;
+  color: #afbac5;
+}
+
+.readout strong {
+  margin-top: 2px;
+  font-size: clamp(0.82rem, 3.2vw, 1.08rem);
+}
+
+.controls {
+  bottom: max(14px, env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 720px) {
+  .viewer {
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  #status {
+    max-width: 280px;
+  }
+}

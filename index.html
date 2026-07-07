@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Sky Lens</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="viewer" aria-label="Live sky camera">
+        <video id="camera" autoplay playsinline muted></video>
+        <img id="skyImage" alt="Deep sky survey image for the camera center">
+        <div class="reticle" aria-hidden="true">
+          <span></span>
+        </div>
+        <div class="top-bar">
+          <div>
+            <p class="label">Sky Lens</p>
+            <p id="status">Start sensors to resolve the camera center.</p>
+          </div>
+          <button id="startButton" type="button">Start</button>
+        </div>
+        <div class="readout" aria-live="polite">
+          <div>
+            <span>Az</span>
+            <strong id="azimuthValue">--</strong>
+          </div>
+          <div>
+            <span>Alt</span>
+            <strong id="altitudeValue">--</strong>
+          </div>
+          <div>
+            <span>RA</span>
+            <strong id="raValue">--</strong>
+          </div>
+          <div>
+            <span>Dec</span>
+            <strong id="decValue">--</strong>
+          </div>
+        </div>
+        <div class="controls">
+          <button id="resolveButton" type="button" disabled>Resolve</button>
+          <button id="toggleOverlayButton" type="button" disabled>Hide overlay</button>
+        </div>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
