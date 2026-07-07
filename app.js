@@ -1,18 +1,22 @@
+const SKYVIEW_ENDPOINT = "https://skyview.gsfc.nasa.gov/current/cgi/runquery.pl";
+
 const state = {
   stream: null,
   location: null,
   pointing: null,
   lastResolvedAt: 0,
   lastResolvedKey: "",
-  overlayVisible: true,
   running: false,
+  survey: "DSS2 Red",
+  fov: 2,
+  pixels: 768,
 };
 
 const camera = document.querySelector("#camera");
 const skyImage = document.querySelector("#skyImage");
 const startButton = document.querySelector("#startButton");
 const resolveButton = document.querySelector("#resolveButton");
-const toggleOverlayButton = document.querySelector("#toggleOverlayButton");
+const imageLink = document.querySelector("#imageLink");
 const statusEl = document.querySelector("#status");
 const azimuthValue = document.querySelector("#azimuthValue");
 const altitudeValue = document.querySelector("#altitudeValue");
@@ -26,7 +30,6 @@ const RAD = 180 / Math.PI;
 
 startButton.addEventListener("click", startExperience);
 resolveButton.addEventListener("click", () => resolveSky(true));
-toggleOverlayButton.addEventListener("click", toggleOverlay);
 
 function setStatus(message) {
   statusEl.textContent = message;
@@ -45,10 +48,8 @@ async function startExperience() {
 
     state.running = true;
     resolveButton.disabled = false;
-    toggleOverlayButton.disabled = false;
     startButton.textContent = "Running";
-    setStatus("Point at the sky. The overlay updates from the camera center.");
-    tick();
+    setStatus("Point at the sky, then tap Resolve to create a SkyView image link.");
   } catch (error) {
     startButton.disabled = false;
     setStatus(error.message || "Could not start sensors.");
@@ -181,12 +182,6 @@ function renderPointing() {
   coordsValue.textContent = formatCoords(state.location.lat, state.location.lon);
 }
 
-function tick() {
-  if (!state.running) return;
-  resolveSky(false);
-  window.setTimeout(tick, 1600);
-}
-
 function resolveSky(force) {
   if (!state.location || !state.pointing) return;
 
@@ -205,28 +200,31 @@ function resolveSky(force) {
   );
 
   const key = `${Math.round(equatorial.raDeg * 20)}:${Math.round(equatorial.decDeg * 20)}`;
-  const canAutoRefresh = Date.now() - state.lastResolvedAt > 4500;
+  if (!force && key === state.lastResolvedKey) return;
 
-  if (!force && (!canAutoRefresh || key === state.lastResolvedKey)) return;
-
-  const url = legacySurveyUrl(equatorial.raDeg, equatorial.decDeg);
+  const url = skyViewUrl(equatorial.raDeg, equatorial.decDeg);
   state.lastResolvedAt = Date.now();
   state.lastResolvedKey = key;
-  skyImage.src = url;
-  skyImage.classList.toggle("visible", state.overlayVisible);
-  setStatus(`Resolved center at RA ${formatRa(equatorial.raDeg)}, Dec ${equatorial.decDeg.toFixed(2)} deg.`);
+  skyImage.removeAttribute("src");
+  skyImage.classList.remove("visible");
+  imageLink.href = url;
+  imageLink.classList.remove("disabled");
+  setStatus(`Resolved image link ready: RA ${formatRa(equatorial.raDeg)}, Dec ${equatorial.decDeg.toFixed(2)} deg.`);
 }
 
-function legacySurveyUrl(raDeg, decDeg) {
+function skyViewUrl(raDeg, decDeg) {
   const params = new URLSearchParams({
-    ra: raDeg.toFixed(6),
-    dec: decDeg.toFixed(6),
-    layer: "ls-dr10",
-    pixscale: "1.5",
-    size: "720",
+    Position: `${raDeg.toFixed(6)},${decDeg.toFixed(6)}`,
+    Survey: state.survey,
+    Coordinates: "J2000",
+    Projection: "Tan",
+    Size: String(state.fov),
+    Pixels: String(state.pixels),
+    Scaling: "Log",
+    Return: "JPEG",
   });
 
-  return `https://www.legacysurvey.org/viewer/jpeg-cutout?${params.toString()}`;
+  return `${SKYVIEW_ENDPOINT}?${params.toString()}`;
 }
 
 function horizontalToEquatorial(azDeg, altDeg, latDeg, lonDeg, date) {
@@ -265,12 +263,6 @@ function localSiderealTimeDeg(date, lonDeg) {
 
 function julianDate(date) {
   return date.getTime() / 86400000 + 2440587.5;
-}
-
-function toggleOverlay() {
-  state.overlayVisible = !state.overlayVisible;
-  skyImage.classList.toggle("visible", state.overlayVisible && Boolean(skyImage.src));
-  toggleOverlayButton.textContent = state.overlayVisible ? "Hide overlay" : "Show overlay";
 }
 
 function formatRa(raDeg) {

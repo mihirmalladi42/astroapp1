@@ -21,7 +21,8 @@ body {
   background: #05070a;
 }
 
-button {
+button,
+.image-link {
   border: 0;
   border-radius: 8px;
   min-height: 44px;
@@ -32,9 +33,18 @@ button {
   background: #8ee7ff;
 }
 
-button:disabled {
+button:disabled,
+.image-link.disabled {
   color: #8f9ba7;
   background: rgba(255, 255, 255, 0.2);
+  pointer-events: none;
+}
+
+.image-link {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  text-decoration: none;
 }
 
 .app-shell {
