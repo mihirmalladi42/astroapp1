@@ -295,6 +295,24 @@ button:disabled,
   margin-top: 4px;
 }
 
+.checkbox-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.checkbox-control input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #8ee7ff;
+}
+
+.checkbox-control span {
+  color: #f4f7fb;
+}
+
 .catalog-count {
   margin: 9px 2px 8px;
   font-size: 0.72rem;

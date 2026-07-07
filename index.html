@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Sky Lens</title>
-    <link rel="stylesheet" href="styles.css?v=20260707-new-tab-image">
+    <link rel="stylesheet" href="styles.css?v=20260707-above-horizon">
   </head>
   <body>
     <main class="app-shell">
@@ -43,6 +43,7 @@
                 <option value="messier">Messier</option>
                 <option value="caldwell">Caldwell</option>
                 <option value="star">Stars</option>
+                <option value="solar">Solar System</option>
               </select>
             </label>
             <label>
@@ -53,7 +54,12 @@
                 <option value="nebula">Nebula</option>
                 <option value="cluster">Cluster</option>
                 <option value="star">Star</option>
+                <option value="solar-system">Solar System</option>
               </select>
+            </label>
+            <label class="checkbox-control wide-control">
+              <input id="aboveHorizonFilter" type="checkbox">
+              <span>Above horizon</span>
             </label>
           </div>
           <p id="catalogCount" class="catalog-count">Loading catalog...</p>
@@ -92,7 +98,8 @@
         </div>
       </section>
     </main>
-    <script src="catalog.js?v=20260707-new-tab-image"></script>
-    <script src="app.js?v=20260707-new-tab-image"></script>
+    <script src="catalog.js?v=20260707-above-horizon"></script>
+    <script src="vendor/astronomy.browser.min.js?v=2.1.19"></script>
+    <script src="app.js?v=20260707-above-horizon"></script>
   </body>
 </html>

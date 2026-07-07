@@ -22,6 +22,7 @@ const catalogPanel = document.querySelector("#catalogPanel");
 const catalogSearch = document.querySelector("#catalogSearch");
 const catalogFilter = document.querySelector("#catalogFilter");
 const typeFilter = document.querySelector("#typeFilter");
+const aboveHorizonFilter = document.querySelector("#aboveHorizonFilter");
 const catalogCount = document.querySelector("#catalogCount");
 const catalogResults = document.querySelector("#catalogResults");
 const guideIndicator = document.querySelector("#guideIndicator");
@@ -43,12 +44,24 @@ const DEG = Math.PI / 180;
 const RAD = 180 / Math.PI;
 const MAX_RESULTS = 60;
 const infoCache = new Map();
+const SOLAR_SYSTEM_BODIES = [
+  { id: "Sun", name: "Sun", body: "Sun", type: "star", aliases: ["Sol"] },
+  { id: "Moon", name: "Moon", body: "Moon", type: "moon", aliases: ["Luna"] },
+  { id: "Mercury", name: "Mercury", body: "Mercury", type: "planet", aliases: [] },
+  { id: "Venus", name: "Venus", body: "Venus", type: "planet", aliases: [] },
+  { id: "Mars", name: "Mars", body: "Mars", type: "planet", aliases: [] },
+  { id: "Jupiter", name: "Jupiter", body: "Jupiter", type: "planet", aliases: [] },
+  { id: "Saturn", name: "Saturn", body: "Saturn", type: "planet", aliases: [] },
+  { id: "Uranus", name: "Uranus", body: "Uranus", type: "planet", aliases: [] },
+  { id: "Neptune", name: "Neptune", body: "Neptune", type: "planet", aliases: [] },
+];
 
 startButton.addEventListener("click", startExperience);
 catalogButton.addEventListener("click", toggleCatalogPanel);
 catalogSearch.addEventListener("input", renderCatalogResults);
 catalogFilter.addEventListener("change", renderCatalogResults);
 typeFilter.addEventListener("change", renderCatalogResults);
+aboveHorizonFilter.addEventListener("change", renderCatalogResults);
 resolveButton.addEventListener("click", () => resolveSky(true));
 imageLink.addEventListener("click", openResolvedImage);
 restartCameraButton.addEventListener("click", restartLiveCamera);
@@ -252,14 +265,18 @@ function renderCatalogResults() {
     return;
   }
 
+  const now = new Date();
   const query = catalogSearch.value.trim().toLowerCase();
   const selectedCatalog = catalogFilter.value;
   const selectedType = typeFilter.value;
+  const onlyAboveHorizon = aboveHorizonFilter.checked;
+  const objects = catalogObjects(now);
   const matches = [];
 
-  for (const object of catalog.objects) {
+  for (const object of objects) {
     if (selectedCatalog !== "all" && object.catalog !== selectedCatalog) continue;
     if (!matchesType(object, selectedType)) continue;
+    if (onlyAboveHorizon && !isAboveHorizon(object, now)) continue;
     if (query && !searchText(object).includes(query)) continue;
     matches.push(object);
   }
@@ -270,9 +287,18 @@ function renderCatalogResults() {
 
   const visibleMatches = matches.slice(0, MAX_RESULTS);
 
-  const totalText = catalog.counts.total ? `${catalog.counts.total.toLocaleString()} objects` : "catalog";
-  catalogCount.textContent = `${visibleMatches.length.toLocaleString()} shown from ${matches.length.toLocaleString()} matches in ${totalText}`;
+  const totalText = catalog.counts.total ? `${objects.length.toLocaleString()} objects` : "catalog";
+  const horizonText = onlyAboveHorizon ? " above horizon" : "";
+  catalogCount.textContent = `${visibleMatches.length.toLocaleString()} shown from ${matches.length.toLocaleString()} matches${horizonText} in ${totalText}`;
   catalogResults.innerHTML = "";
+
+  if (onlyAboveHorizon && !state.location) {
+    catalogCount.textContent = "Start sensors first so the app can filter targets above your local horizon.";
+  }
+
+  if (selectedCatalog === "solar" && !solarSystemAvailable()) {
+    catalogCount.textContent = "Solar System positions need the local ephemeris file to load.";
+  }
 
   for (const object of visibleMatches) {
     const row = document.createElement("div");
@@ -309,6 +335,83 @@ function renderCatalogResults() {
     empty.textContent = "No matches.";
     catalogResults.append(empty);
   }
+}
+
+function catalogObjects(date) {
+  return [...solarSystemCatalogObjects(date), ...catalog.objects];
+}
+
+function solarSystemAvailable() {
+  return typeof window.Astronomy === "object" && typeof window.Astronomy.Equator === "function";
+}
+
+function solarSystemCatalogObjects(date) {
+  if (!solarSystemAvailable()) return [];
+
+  const objects = [];
+  for (const body of SOLAR_SYSTEM_BODIES) {
+    const position = solarSystemPosition(body, date);
+    if (position) objects.push(position);
+  }
+  return objects;
+}
+
+function solarSystemPosition(body, date) {
+  const Astronomy = window.Astronomy;
+  const observer = astronomyObserver();
+
+  try {
+    const equ2000 = Astronomy.Equator(body.body, date, observer, false, true);
+    const equOfDate = Astronomy.Equator(body.body, date, observer, true, true);
+    const horizon = Astronomy.Horizon(date, observer, equOfDate.ra, equOfDate.dec, "normal");
+    const distanceAu = Number.isFinite(equ2000.dist) ? equ2000.dist : null;
+
+    return {
+      id: body.id,
+      name: body.name,
+      catalog: "solar",
+      type: body.type,
+      ra: normalizeDegrees(equ2000.ra * 15),
+      dec: equ2000.dec,
+      aliases: body.aliases,
+      body: body.body,
+      dynamic: true,
+      distanceAu,
+      altAz: {
+        azDeg: normalizeDegrees(horizon.azimuth),
+        altDeg: horizon.altitude,
+      },
+      source: ["astronomy-engine"],
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+function astronomyObserver() {
+  const Astronomy = window.Astronomy;
+  const lat = state.location?.lat ?? 0;
+  const lon = state.location?.lon ?? 0;
+  return new Astronomy.Observer(lat, lon, 0);
+}
+
+function currentCatalogObject(object, date = new Date()) {
+  if (object.catalog !== "solar") return object;
+  return solarSystemPosition(object, date) || object;
+}
+
+function isAboveHorizon(object, date) {
+  if (!state.location) return false;
+
+  const currentObject = currentCatalogObject(object, date);
+  const altAz = currentObject.altAz || equatorialToHorizontal(
+    currentObject.ra,
+    currentObject.dec,
+    state.location.lat,
+    state.location.lon,
+    date,
+  );
+  return altAz.altDeg > 0;
 }
 
 async function showCatalogInfo(object, row, button) {
@@ -385,16 +488,23 @@ function wikipediaQuery(object) {
   if (object.catalog === "ngc") return `${object.id} astronomy`;
   if (object.catalog === "caldwell") return `${object.name} ${object.id} astronomy`;
   if (object.catalog === "star") return `${object.name} star`;
+  if (object.catalog === "solar") return object.id === "Sun" ? "Sun astronomy" : `${object.id} astronomy`;
   return `${object.name || object.id} astronomy`;
 }
 
 function localObjectInfo(object) {
   const title = object.name === object.id ? object.id : `${object.id} (${object.name})`;
+  if (object.catalog === "solar") {
+    const currentObject = currentCatalogObject(object);
+    const distance = formatSolarDistance(currentObject);
+    return `${title} is a moving Solar System target. Its RA/Dec are calculated live for the current UTC time${state.location ? " and your location" : ""}. Current position: RA ${formatRa(currentObject.ra)}, Dec ${formatDec(currentObject.dec)}${distance ? `, distance ${distance}` : ""}.`;
+  }
   return `${title} is listed locally as ${catalogLabel(object.catalog)} / ${typeLabel(object.type)} at RA ${formatRa(object.ra)} and Dec ${formatDec(object.dec)}. Discovery date, discoverer, and distance were not available from the live info source.`;
 }
 
 function resolveCatalogObject(object) {
-  const url = skyViewUrl(object.ra, object.dec);
+  const currentObject = currentCatalogObject(object);
+  const url = skyViewUrl(currentObject.ra, currentObject.dec);
   state.target = object;
   state.lastResolvedAt = Date.now();
   state.lastResolvedKey = `catalog:${object.id}`;
@@ -402,18 +512,19 @@ function resolveCatalogObject(object) {
   skyImage.classList.remove("visible");
   setResolvedImageLink(url);
   restartCameraButton.classList.remove("hidden");
-  raValue.textContent = formatRa(object.ra);
-  decValue.textContent = formatDec(object.dec);
+  raValue.textContent = formatRa(currentObject.ra);
+  decValue.textContent = formatDec(currentObject.dec);
   catalogPanel.classList.add("hidden");
   updateGuide(new Date());
-  setStatus(`Catalog target ready: ${object.id} at RA ${formatRa(object.ra)}, Dec ${formatDec(object.dec)}.`);
+  setStatus(`Catalog target ready: ${object.id} at RA ${formatRa(currentObject.ra)}, Dec ${formatDec(currentObject.dec)}.`);
 }
 
 function updateGuide(date = new Date()) {
   if (!state.target) return;
 
+  const target = currentCatalogObject(state.target, date);
   guideIndicator.classList.remove("hidden");
-  guideTarget.textContent = state.target.id;
+  guideTarget.textContent = target.id;
 
   if (!state.location || !state.pointing) {
     guideDirection.textContent = "Start sensors";
@@ -422,9 +533,9 @@ function updateGuide(date = new Date()) {
     return;
   }
 
-  const targetAltAz = equatorialToHorizontal(
-    state.target.ra,
-    state.target.dec,
+  const targetAltAz = target.altAz || equatorialToHorizontal(
+    target.ra,
+    target.dec,
     state.location.lat,
     state.location.lon,
     date,
@@ -480,6 +591,9 @@ function matchesType(object, selectedType) {
   if (selectedType === "star") {
     return object.catalog === "star" || text.includes("star") || text.includes("*");
   }
+  if (selectedType === "solar-system") {
+    return object.catalog === "solar";
+  }
 
   return true;
 }
@@ -490,6 +604,7 @@ function catalogLabel(value) {
     messier: "Messier",
     caldwell: "Caldwell",
     star: "Star",
+    solar: "Solar System",
   };
   return labels[value] || value;
 }
@@ -632,6 +747,16 @@ function formatCoords(latDeg, lonDeg) {
   const latSuffix = latDeg >= 0 ? "N" : "S";
   const lonSuffix = lonDeg >= 0 ? "E" : "W";
   return `${Math.abs(latDeg).toFixed(5)} ${latSuffix}, ${Math.abs(lonDeg).toFixed(5)} ${lonSuffix}`;
+}
+
+function formatSolarDistance(object) {
+  if (!Number.isFinite(object.distanceAu)) return "";
+
+  if (object.id === "Moon") {
+    return `${Math.round(object.distanceAu * 149597870.7).toLocaleString()} km`;
+  }
+
+  return `${object.distanceAu.toFixed(3)} AU`;
 }
 
 function signedDeltaDeg(toDeg, fromDeg) {
