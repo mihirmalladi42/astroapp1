@@ -94,14 +94,13 @@ button:disabled,
 #skyImage {
   z-index: 2;
   opacity: 0;
-  mix-blend-mode: screen;
-  filter: saturate(1.2) contrast(1.05);
+  filter: brightness(0.78) contrast(1.38) saturate(1.08);
   transition: opacity 220ms ease;
   pointer-events: none;
 }
 
 #skyImage.visible {
-  opacity: 0.72;
+  opacity: 0.82;
 }
 
 .reticle {
