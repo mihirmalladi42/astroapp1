@@ -191,6 +191,10 @@ button:disabled {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.readout .wide {
+  grid-column: span 2;
+}
+
 .readout span,
 .readout strong {
   display: block;

@@ -18,6 +18,8 @@ const azimuthValue = document.querySelector("#azimuthValue");
 const altitudeValue = document.querySelector("#altitudeValue");
 const raValue = document.querySelector("#raValue");
 const decValue = document.querySelector("#decValue");
+const utcValue = document.querySelector("#utcValue");
+const coordsValue = document.querySelector("#coordsValue");
 
 const DEG = Math.PI / 180;
 const RAD = 180 / Math.PI;
@@ -162,18 +164,21 @@ function renderPointing() {
   const pointing = state.pointing;
   if (!pointing || !state.location) return;
 
+  const now = new Date();
   const equatorial = horizontalToEquatorial(
     pointing.azDeg,
     pointing.altDeg,
     state.location.lat,
     state.location.lon,
-    new Date(),
+    now,
   );
 
   azimuthValue.textContent = `${pointing.azDeg.toFixed(1)} deg`;
   altitudeValue.textContent = `${pointing.altDeg.toFixed(1)} deg`;
   raValue.textContent = formatRa(equatorial.raDeg);
   decValue.textContent = `${equatorial.decDeg.toFixed(2)} deg`;
+  utcValue.textContent = formatUtc(now);
+  coordsValue.textContent = formatCoords(state.location.lat, state.location.lon);
 }
 
 function tick() {
@@ -276,6 +281,16 @@ function formatRa(raDeg) {
   const seconds = Math.round((minutesFloat - minutes) * 60);
 
   return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function formatUtc(date) {
+  return date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
+}
+
+function formatCoords(latDeg, lonDeg) {
+  const latSuffix = latDeg >= 0 ? "N" : "S";
+  const lonSuffix = lonDeg >= 0 ? "E" : "W";
+  return `${Math.abs(latDeg).toFixed(5)} ${latSuffix}, ${Math.abs(lonDeg).toFixed(5)} ${lonSuffix}`;
 }
 
 function normalizeDegrees(value) {
