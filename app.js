@@ -10,6 +10,7 @@ const state = {
   survey: "DSS2 Red",
   fov: 2,
   pixels: 768,
+  target: null,
 };
 
 const camera = document.querySelector("#camera");
@@ -23,6 +24,10 @@ const catalogFilter = document.querySelector("#catalogFilter");
 const typeFilter = document.querySelector("#typeFilter");
 const catalogCount = document.querySelector("#catalogCount");
 const catalogResults = document.querySelector("#catalogResults");
+const guideIndicator = document.querySelector("#guideIndicator");
+const guideTarget = document.querySelector("#guideTarget");
+const guideDirection = document.querySelector("#guideDirection");
+const targetCheck = document.querySelector("#targetCheck");
 const resolveButton = document.querySelector("#resolveButton");
 const imageLink = document.querySelector("#imageLink");
 const restartCameraButton = document.querySelector("#restartCameraButton");
@@ -197,6 +202,7 @@ function renderPointing() {
   decValue.textContent = `${equatorial.decDeg.toFixed(2)} deg`;
   utcValue.textContent = formatUtc(now);
   coordsValue.textContent = formatCoords(state.location.lat, state.location.lon);
+  updateGuide(now);
 }
 
 function resolveSky(force) {
@@ -280,7 +286,7 @@ function renderCatalogResults() {
 
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = "Use";
+    button.textContent = "Guide";
     button.addEventListener("click", () => resolveCatalogObject(object));
 
     row.append(details, button);
@@ -297,6 +303,7 @@ function renderCatalogResults() {
 
 function resolveCatalogObject(object) {
   const url = skyViewUrl(object.ra, object.dec);
+  state.target = object;
   state.lastResolvedAt = Date.now();
   state.lastResolvedKey = `catalog:${object.id}`;
   skyImage.removeAttribute("src");
@@ -307,7 +314,43 @@ function resolveCatalogObject(object) {
   raValue.textContent = formatRa(object.ra);
   decValue.textContent = `${object.dec.toFixed(2)} deg`;
   catalogPanel.classList.add("hidden");
+  updateGuide(new Date());
   setStatus(`Catalog target ready: ${object.id} at RA ${formatRa(object.ra)}, Dec ${object.dec.toFixed(2)} deg.`);
+}
+
+function updateGuide(date = new Date()) {
+  if (!state.target) return;
+
+  guideIndicator.classList.remove("hidden");
+  guideTarget.textContent = state.target.id;
+
+  if (!state.location || !state.pointing) {
+    guideDirection.textContent = "Start sensors";
+    guideIndicator.classList.remove("on-target");
+    targetCheck.classList.add("hidden");
+    return;
+  }
+
+  const targetAltAz = equatorialToHorizontal(
+    state.target.ra,
+    state.target.dec,
+    state.location.lat,
+    state.location.lon,
+    date,
+  );
+
+  const deltaAz = signedDeltaDeg(targetAltAz.azDeg, state.pointing.azDeg);
+  const deltaAlt = targetAltAz.altDeg - state.pointing.altDeg;
+  const azText = Math.abs(deltaAz) < 1 ? "" : `${deltaAz > 0 ? "RIGHT" : "LEFT"} ${Math.abs(deltaAz).toFixed(1)} deg`;
+  const altText = Math.abs(deltaAlt) < 1 ? "" : `${deltaAlt > 0 ? "UP" : "DOWN"} ${Math.abs(deltaAlt).toFixed(1)} deg`;
+  const resolvedImageHalfSize = state.fov / 2;
+  const isInResolvedImage = Math.abs(deltaAz) <= resolvedImageHalfSize && Math.abs(deltaAlt) <= resolvedImageHalfSize;
+
+  guideIndicator.classList.toggle("on-target", isInResolvedImage);
+  targetCheck.classList.toggle("hidden", !isInResolvedImage);
+  guideDirection.textContent = isInResolvedImage
+    ? `ON TARGET | Alt ${targetAltAz.altDeg.toFixed(1)} deg, Az ${targetAltAz.azDeg.toFixed(1)} deg`
+    : [azText, altText].filter(Boolean).join(" / ");
 }
 
 function searchText(object) {
@@ -423,6 +466,26 @@ function horizontalToEquatorial(azDeg, altDeg, latDeg, lonDeg, date) {
   };
 }
 
+function equatorialToHorizontal(raDeg, decDeg, latDeg, lonDeg, date) {
+  const lst = localSiderealTimeDeg(date, lonDeg);
+  const hourAngle = signedDeltaDeg(lst, raDeg) * DEG;
+  const dec = decDeg * DEG;
+  const lat = latDeg * DEG;
+
+  const sinAlt = Math.sin(dec) * Math.sin(lat)
+    + Math.cos(dec) * Math.cos(lat) * Math.cos(hourAngle);
+  const alt = Math.asin(clamp(sinAlt, -1, 1));
+  const az = Math.atan2(
+    -Math.sin(hourAngle),
+    Math.tan(dec) * Math.cos(lat) - Math.sin(lat) * Math.cos(hourAngle),
+  );
+
+  return {
+    azDeg: normalizeDegrees(az * RAD),
+    altDeg: alt * RAD,
+  };
+}
+
 function localSiderealTimeDeg(date, lonDeg) {
   const jd = julianDate(date);
   const centuries = (jd - 2451545.0) / 36525;
@@ -456,6 +519,11 @@ function formatCoords(latDeg, lonDeg) {
   const latSuffix = latDeg >= 0 ? "N" : "S";
   const lonSuffix = lonDeg >= 0 ? "E" : "W";
   return `${Math.abs(latDeg).toFixed(5)} ${latSuffix}, ${Math.abs(lonDeg).toFixed(5)} ${lonSuffix}`;
+}
+
+function signedDeltaDeg(toDeg, fromDeg) {
+  const delta = normalizeDegrees(toDeg - fromDeg);
+  return delta > 180 ? delta - 360 : delta;
 }
 
 function normalizeDegrees(value) {

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Sky Lens</title>
-    <link rel="stylesheet" href="styles.css?v=20260707-catalog-search">
+    <link rel="stylesheet" href="styles.css?v=20260707-target-check">
   </head>
   <body>
     <main class="app-shell">
@@ -14,6 +14,7 @@
         <div class="reticle" aria-hidden="true">
           <span></span>
         </div>
+        <div id="targetCheck" class="target-check hidden" aria-label="Target will be in resolved image">✓</div>
         <div class="top-bar">
           <div class="status-card">
             <p class="label">Sky Lens</p>
@@ -23,6 +24,10 @@
             <button id="catalogButton" type="button">Catalog</button>
             <button id="startButton" type="button">Start</button>
           </div>
+        </div>
+        <div id="guideIndicator" class="guide-indicator hidden" aria-live="polite">
+          <strong id="guideTarget">No target</strong>
+          <span id="guideDirection">Choose a catalog target</span>
         </div>
         <section id="catalogPanel" class="catalog-panel hidden" aria-label="Catalog search">
           <div class="catalog-grid">
@@ -87,7 +92,7 @@
         </div>
       </section>
     </main>
-    <script src="catalog.js?v=20260707-catalog-search"></script>
-    <script src="app.js?v=20260707-catalog-search"></script>
+    <script src="catalog.js?v=20260707-target-check"></script>
+    <script src="app.js?v=20260707-target-check"></script>
   </body>
 </html>

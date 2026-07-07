@@ -150,7 +150,29 @@ button:disabled,
   transform: translate(-50%, -50%);
 }
 
+.target-check {
+  position: absolute;
+  left: 50%;
+  top: calc(50% - 58px);
+  z-index: 4;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid rgba(208, 255, 230, 0.72);
+  border-radius: 50%;
+  background: #7bffbd;
+  box-shadow: 0 0 22px rgba(123, 255, 189, 0.62);
+  color: #052016;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
 .top-bar,
+.guide-indicator,
 .readout,
 .controls {
   position: absolute;
@@ -176,7 +198,8 @@ button:disabled,
 
 .top-bar > .status-card,
 .readout,
-.catalog-panel {
+.catalog-panel,
+.guide-indicator {
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
   background: rgba(5, 7, 10, 0.7);
@@ -209,13 +232,50 @@ button:disabled,
   color: #f4f7fb;
 }
 
+.guide-indicator {
+  top: calc(122px + env(safe-area-inset-top));
+  z-index: 4;
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  width: min(430px, calc(100vw - 28px));
+  margin: 0 auto;
+  padding: 9px 11px;
+  text-align: center;
+}
+
+.guide-indicator strong,
+.guide-indicator span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guide-indicator strong {
+  color: #8ee7ff;
+  font-size: 0.76rem;
+}
+
+.guide-indicator span {
+  color: #f4f7fb;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.guide-indicator.on-target {
+  border-color: rgba(123, 255, 189, 0.62);
+  box-shadow: 0 0 28px rgba(123, 255, 189, 0.18);
+}
+
 .catalog-panel {
   position: absolute;
   left: max(14px, env(safe-area-inset-left));
   right: max(14px, env(safe-area-inset-right));
-  top: calc(116px + env(safe-area-inset-top));
+  top: calc(170px + env(safe-area-inset-top));
   z-index: 5;
-  max-height: calc(100dvh - 330px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(100dvh - 384px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   min-height: 170px;
   overflow: hidden;
   padding: 10px;
@@ -248,7 +308,7 @@ button:disabled,
 .catalog-results {
   display: grid;
   gap: 7px;
-  max-height: calc(100dvh - 470px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(100dvh - 524px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   overflow: auto;
   padding-right: 2px;
 }
@@ -334,7 +394,7 @@ button:disabled,
 }
 
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 @media (min-width: 720px) {
