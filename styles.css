@@ -347,7 +347,7 @@ button:disabled,
 }
 
 .readout {
-  bottom: calc(132px + env(safe-area-inset-bottom));
+  bottom: calc(142px + env(safe-area-inset-bottom));
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
@@ -386,7 +386,15 @@ button:disabled,
   bottom: max(14px, env(safe-area-inset-bottom));
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 8px;
+}
+
+.controls button,
+.controls .image-link {
+  min-width: 0;
+  padding: 0 10px;
+  font-size: clamp(0.78rem, 3vw, 0.95rem);
+  line-height: 1.05;
 }
 
 .wide-control {

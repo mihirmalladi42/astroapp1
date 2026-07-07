@@ -12,6 +12,7 @@ const state = {
   pixels: 768,
   target: null,
   annotatedImageUrl: "",
+  annotatedImageRequestId: 0,
 };
 
 const camera = document.querySelector("#camera");
@@ -31,6 +32,7 @@ const guideDirection = document.querySelector("#guideDirection");
 const targetCheck = document.querySelector("#targetCheck");
 const resolveButton = document.querySelector("#resolveButton");
 const imageLink = document.querySelector("#imageLink");
+const downloadLink = document.querySelector("#downloadLink");
 const restartCameraButton = document.querySelector("#restartCameraButton");
 const statusEl = document.querySelector("#status");
 const azimuthValue = document.querySelector("#azimuthValue");
@@ -200,7 +202,7 @@ function renderPointing() {
   azimuthValue.textContent = `${pointing.azDeg.toFixed(1)} deg`;
   altitudeValue.textContent = `${pointing.altDeg.toFixed(1)} deg`;
   raValue.textContent = formatRa(equatorial.raDeg);
-  decValue.textContent = `${equatorial.decDeg.toFixed(2)} deg`;
+  decValue.textContent = formatDec(equatorial.decDeg);
   utcValue.textContent = formatUtc(now);
   coordsValue.textContent = formatCoords(state.location.lat, state.location.lon);
   updateGuide(now);
@@ -236,10 +238,11 @@ function resolveSky(force) {
     utc: formatUtc(resolvedAt),
     coords: formatCoords(state.location.lat, state.location.lon),
     ra: formatRa(equatorial.raDeg),
-    dec: `${equatorial.decDeg.toFixed(2)} deg`,
+    dec: formatDec(equatorial.decDeg),
+    filenameBase: resolvedImageFilenameBase(equatorial.raDeg, equatorial.decDeg, state.location.lat, state.location.lon, resolvedAt),
   });
   restartCameraButton.classList.remove("hidden");
-  setStatus(`Resolved image link ready: RA ${formatRa(equatorial.raDeg)}, Dec ${equatorial.decDeg.toFixed(2)} deg.`);
+  setStatus(`Resolved image link ready: RA ${formatRa(equatorial.raDeg)}, Dec ${formatDec(equatorial.decDeg)}.`);
 }
 
 function toggleCatalogPanel() {
@@ -320,14 +323,17 @@ function resolveCatalogObject(object) {
     utc: formatUtc(resolvedAt),
     coords: state.location ? formatCoords(state.location.lat, state.location.lon) : "Coords unavailable",
     ra: formatRa(object.ra),
-    dec: `${object.dec.toFixed(2)} deg`,
+    dec: formatDec(object.dec),
+    filenameBase: state.location
+      ? resolvedImageFilenameBase(object.ra, object.dec, state.location.lat, state.location.lon, resolvedAt)
+      : resolvedImageFilenameBase(object.ra, object.dec, 0, 0, resolvedAt),
   });
   restartCameraButton.classList.remove("hidden");
   raValue.textContent = formatRa(object.ra);
-  decValue.textContent = `${object.dec.toFixed(2)} deg`;
+  decValue.textContent = formatDec(object.dec);
   catalogPanel.classList.add("hidden");
   updateGuide(new Date());
-  setStatus(`Catalog target ready: ${object.id} at RA ${formatRa(object.ra)}, Dec ${object.dec.toFixed(2)} deg.`);
+  setStatus(`Catalog target ready: ${object.id} at RA ${formatRa(object.ra)}, Dec ${formatDec(object.dec)}.`);
 }
 
 function updateGuide(date = new Date()) {
@@ -423,6 +429,9 @@ async function restartLiveCamera() {
   setStatus("Restoring live camera for the next target.");
   imageLink.href = "https://skyview.gsfc.nasa.gov/current/cgi/query.pl";
   imageLink.classList.add("disabled");
+  downloadLink.href = "https://skyview.gsfc.nasa.gov/current/cgi/query.pl";
+  downloadLink.removeAttribute("download");
+  downloadLink.classList.add("disabled");
   clearAnnotatedImageUrl();
   restartCameraButton.classList.add("hidden");
   state.lastResolvedKey = "";
@@ -458,12 +467,34 @@ function skyViewUrl(raDeg, decDeg) {
 
 function setResolvedImageLink(imageUrl, metadata) {
   clearAnnotatedImageUrl();
+  const requestId = state.annotatedImageRequestId + 1;
+  state.annotatedImageRequestId = requestId;
   state.annotatedImageUrl = annotatedImageUrl(imageUrl, metadata);
   imageLink.href = state.annotatedImageUrl;
   imageLink.classList.remove("disabled");
+  downloadLink.href = state.annotatedImageUrl;
+  downloadLink.download = `${metadata.filenameBase || "resolved_sky_image"}.svg`;
+  downloadLink.classList.remove("disabled");
+
+  annotatedPngUrl(imageUrl, metadata)
+    .then((pngUrl) => {
+      if (state.annotatedImageRequestId !== requestId) {
+        URL.revokeObjectURL(pngUrl);
+        return;
+      }
+      clearAnnotatedImageUrl();
+      state.annotatedImageUrl = pngUrl;
+      imageLink.href = pngUrl;
+      downloadLink.href = pngUrl;
+      downloadLink.download = `${metadata.filenameBase || "resolved_sky_image"}.png`;
+    })
+    .catch(() => {
+      // Some image servers block browser-side rasterization. The SVG fallback remains usable.
+    });
 }
 
 function clearAnnotatedImageUrl() {
+  state.annotatedImageRequestId += 1;
   if (state.annotatedImageUrl) {
     URL.revokeObjectURL(state.annotatedImageUrl);
     state.annotatedImageUrl = "";
@@ -490,6 +521,92 @@ function annotatedImageUrl(imageUrl, metadata) {
   <g fill="#ff2b2b" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">${textLines}</g>
 </svg>`;
   return URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+}
+
+async function annotatedPngUrl(imageUrl, metadata) {
+  const response = await fetch(imageUrl);
+  if (!response.ok) throw new Error("Could not fetch resolved image.");
+
+  const sourceUrl = URL.createObjectURL(await response.blob());
+  try {
+    const image = await loadImage(sourceUrl);
+    const canvas = document.createElement("canvas");
+    canvas.width = state.pixels;
+    canvas.height = state.pixels;
+
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0, state.pixels, state.pixels);
+
+    const lines = [
+      metadata.object ? `Object: ${metadata.object}` : "",
+      `UTC: ${metadata.utc}`,
+      `Coords: ${metadata.coords}`,
+      `RA: ${metadata.ra}   Dec: ${metadata.dec}`,
+    ].filter(Boolean);
+    const lineHeight = 27;
+    const padding = 18;
+    const bandHeight = padding * 2 + lineHeight * lines.length;
+
+    context.fillStyle = "rgba(0, 0, 0, 0.72)";
+    context.fillRect(0, state.pixels - bandHeight, state.pixels, bandHeight);
+    context.fillStyle = "#ff2b2b";
+    context.font = "700 22px Arial, Helvetica, sans-serif";
+    context.textBaseline = "alphabetic";
+    lines.forEach((line, index) => {
+      context.fillText(line, 18, state.pixels - bandHeight + padding + 18 + index * lineHeight);
+    });
+
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob((pngBlob) => {
+        if (pngBlob) resolve(pngBlob);
+        else reject(new Error("Could not create annotated PNG."));
+      }, "image/png");
+    });
+    return URL.createObjectURL(blob);
+  } finally {
+    URL.revokeObjectURL(sourceUrl);
+  }
+}
+
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Could not load resolved image."));
+    image.src = url;
+  });
+}
+
+function resolvedImageFilenameBase(raDeg, decDeg, latDeg, lonDeg, date) {
+  return [
+    filenameRa(raDeg),
+    filenameDec(decDeg),
+    filenameCoord(latDeg, "N", "S"),
+    filenameCoord(lonDeg, "E", "W"),
+    `time-${date.toISOString().replace(/\.\d{3}Z$/, "Z").replace(/[-:]/g, "").replace("T", "-")}`,
+  ].join("_");
+}
+
+function filenameRa(raDeg) {
+  const totalSeconds = Math.round((normalizeDegrees(raDeg) / 15) * 3600);
+  const hours = Math.floor(totalSeconds / 3600) % 24;
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `ra-${String(hours).padStart(2, "0")}h${String(minutes).padStart(2, "0")}m${String(seconds).padStart(2, "0")}s`;
+}
+
+function filenameDec(decDeg) {
+  const direction = decDeg < 0 ? "S" : "N";
+  const totalArcSeconds = Math.round(Math.abs(decDeg) * 3600);
+  const degrees = Math.floor(totalArcSeconds / 3600);
+  const minutes = Math.floor((totalArcSeconds % 3600) / 60);
+  const seconds = totalArcSeconds % 60;
+  return `dec-${String(degrees).padStart(2, "0")}d${String(minutes).padStart(2, "0")}m${String(seconds).padStart(2, "0")}s${direction}`;
+}
+
+function filenameCoord(value, positiveSuffix, negativeSuffix) {
+  const suffix = value >= 0 ? positiveSuffix : negativeSuffix;
+  return `${Math.abs(value).toFixed(5).replace(".", "p")}${suffix}`;
 }
 
 function horizontalToEquatorial(azDeg, altDeg, latDeg, lonDeg, date) {
@@ -558,6 +675,16 @@ function formatRa(raDeg) {
   const seconds = Math.round((minutesFloat - minutes) * 60);
 
   return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function formatDec(decDeg) {
+  const sign = decDeg < 0 ? "-" : "+";
+  const totalArcSeconds = Math.round(Math.abs(decDeg) * 3600);
+  const degrees = Math.floor(totalArcSeconds / 3600);
+  const minutes = Math.floor((totalArcSeconds % 3600) / 60);
+  const seconds = totalArcSeconds % 60;
+
+  return `${sign}${degrees}° ${String(minutes).padStart(2, "0")}' ${String(seconds).padStart(2, "0")}"`;
 }
 
 function formatUtc(date) {
