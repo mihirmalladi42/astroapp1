@@ -11,8 +11,6 @@ const state = {
   fov: 2,
   pixels: 768,
   target: null,
-  resolvedImage: null,
-  resolvedViewerUrl: "",
 };
 
 const camera = document.querySelector("#camera");
@@ -52,7 +50,6 @@ catalogSearch.addEventListener("input", renderCatalogResults);
 catalogFilter.addEventListener("change", renderCatalogResults);
 typeFilter.addEventListener("change", renderCatalogResults);
 resolveButton.addEventListener("click", () => resolveSky(true));
-downloadLink.addEventListener("click", downloadResolvedImage);
 restartCameraButton.addEventListener("click", restartLiveCamera);
 
 renderCatalogResults();
@@ -229,19 +226,12 @@ function resolveSky(force) {
   const key = `${Math.round(equatorial.raDeg * 20)}:${Math.round(equatorial.decDeg * 20)}`;
   if (!force && key === state.lastResolvedKey) return;
 
-  const resolvedAt = new Date();
   const url = skyViewUrl(equatorial.raDeg, equatorial.decDeg);
   state.lastResolvedAt = Date.now();
   state.lastResolvedKey = key;
   skyImage.removeAttribute("src");
   skyImage.classList.remove("visible");
-  setResolvedImageLink(url, {
-    utc: formatUtc(resolvedAt),
-    coords: formatCoords(state.location.lat, state.location.lon),
-    ra: formatRa(equatorial.raDeg),
-    dec: formatDec(equatorial.decDeg),
-    filenameBase: resolvedImageFilenameBase(equatorial.raDeg, equatorial.decDeg, state.location.lat, state.location.lon, resolvedAt),
-  });
+  setResolvedImageLink(url);
   restartCameraButton.classList.remove("hidden");
   setStatus(`Resolved image link ready: RA ${formatRa(equatorial.raDeg)}, Dec ${formatDec(equatorial.decDeg)}.`);
 }
@@ -312,23 +302,13 @@ function renderCatalogResults() {
 }
 
 function resolveCatalogObject(object) {
-  const resolvedAt = new Date();
   const url = skyViewUrl(object.ra, object.dec);
   state.target = object;
   state.lastResolvedAt = Date.now();
   state.lastResolvedKey = `catalog:${object.id}`;
   skyImage.removeAttribute("src");
   skyImage.classList.remove("visible");
-  setResolvedImageLink(url, {
-    object: object.name === object.id ? object.id : `${object.id} - ${object.name}`,
-    utc: formatUtc(resolvedAt),
-    coords: state.location ? formatCoords(state.location.lat, state.location.lon) : "Coords unavailable",
-    ra: formatRa(object.ra),
-    dec: formatDec(object.dec),
-    filenameBase: state.location
-      ? resolvedImageFilenameBase(object.ra, object.dec, state.location.lat, state.location.lon, resolvedAt)
-      : resolvedImageFilenameBase(object.ra, object.dec, 0, 0, resolvedAt),
-  });
+  setResolvedImageLink(url);
   restartCameraButton.classList.remove("hidden");
   raValue.textContent = formatRa(object.ra);
   decValue.textContent = formatDec(object.dec);
@@ -433,7 +413,6 @@ async function restartLiveCamera() {
   downloadLink.href = "https://skyview.gsfc.nasa.gov/current/cgi/query.pl";
   downloadLink.removeAttribute("download");
   downloadLink.classList.add("disabled");
-  clearResolvedImage();
   restartCameraButton.classList.add("hidden");
   state.lastResolvedKey = "";
 
@@ -466,200 +445,12 @@ function skyViewUrl(raDeg, decDeg) {
   return `${SKYVIEW_ENDPOINT}?${params.toString()}`;
 }
 
-function setResolvedImageLink(imageUrl, metadata) {
-  clearResolvedImage();
-  state.resolvedImage = { imageUrl, metadata };
-  state.resolvedViewerUrl = annotatedViewerUrl(imageUrl, metadata);
-  imageLink.href = state.resolvedViewerUrl;
+function setResolvedImageLink(imageUrl) {
+  imageLink.href = imageUrl;
   imageLink.classList.remove("disabled");
   downloadLink.href = imageUrl;
-  downloadLink.download = `${metadata.filenameBase || "resolved_sky_image"}.png`;
+  downloadLink.download = "resolved-sky-image.jpg";
   downloadLink.classList.remove("disabled");
-}
-
-function clearResolvedImage() {
-  state.resolvedImage = null;
-  if (state.resolvedViewerUrl) {
-    URL.revokeObjectURL(state.resolvedViewerUrl);
-    state.resolvedViewerUrl = "";
-  }
-}
-
-function annotatedViewerUrl(imageUrl, metadata) {
-  const overlay = annotationLines(metadata)
-    .map((line) => `<div>${escapeHtml(line)}</div>`)
-    .join("");
-  const html = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(metadata.filenameBase || "Resolved sky image")}</title>
-<style>
-html,body{margin:0;min-height:100%;background:#000;color:#ff2b2b;font-family:Arial,Helvetica,sans-serif}
-.wrap{position:relative;min-height:100vh;display:grid;place-items:center;background:#000}
-img{max-width:100vw;max-height:100vh;display:block}
-.meta{position:absolute;left:0;right:0;bottom:0;padding:18px;background:rgba(0,0,0,.72);color:#ff2b2b;font-size:clamp(14px,3.5vw,22px);font-weight:700;line-height:1.3}
-</style>
-</head>
-<body>
-<main class="wrap">
-<img src="${escapeHtml(imageUrl)}" alt="Resolved sky image">
-<section class="meta">${overlay}</section>
-</main>
-</body>
-</html>`;
-  return URL.createObjectURL(new Blob([html], { type: "text/html" }));
-}
-
-function annotatedSvgBlob(imageUrl, metadata) {
-  const lines = [
-    metadata.object ? `Object: ${metadata.object}` : "",
-    `UTC: ${metadata.utc}`,
-    `Coords: ${metadata.coords}`,
-    `RA: ${metadata.ra}   Dec: ${metadata.dec}`,
-  ].filter(Boolean);
-  const lineHeight = 27;
-  const padding = 18;
-  const bandHeight = padding * 2 + lineHeight * lines.length;
-  const textStartY = state.pixels - bandHeight + padding + 18;
-  const textLines = lines
-    .map((line, index) => `<text x="18" y="${textStartY + index * lineHeight}">${escapeXml(line)}</text>`)
-    .join("");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${state.pixels}" height="${state.pixels}" viewBox="0 0 ${state.pixels} ${state.pixels}">
-  <image href="${escapeXml(imageUrl)}" x="0" y="0" width="${state.pixels}" height="${state.pixels}" preserveAspectRatio="xMidYMid slice"/>
-  <rect x="0" y="${state.pixels - bandHeight}" width="${state.pixels}" height="${bandHeight}" fill="#000" opacity="0.72"/>
-  <g fill="#ff2b2b" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">${textLines}</g>
-</svg>`;
-  return new Blob([svg], { type: "image/svg+xml" });
-}
-
-async function downloadResolvedImage(event) {
-  event.preventDefault();
-  if (!state.resolvedImage || downloadLink.classList.contains("disabled")) return;
-
-  const { imageUrl, metadata } = state.resolvedImage;
-  const filenameBase = metadata.filenameBase || "resolved_sky_image";
-
-  try {
-    const pngBlob = await annotatedPngBlob(imageUrl, metadata);
-    await saveBlob(pngBlob, `${filenameBase}.png`);
-    setStatus("Annotated resolved image download started.");
-  } catch (error) {
-    const svgBlob = annotatedSvgBlob(imageUrl, metadata);
-    await saveBlob(svgBlob, `${filenameBase}.svg`);
-    setStatus("Annotated resolved image download started as SVG.");
-  }
-}
-
-async function annotatedPngBlob(imageUrl, metadata) {
-  const response = await fetch(imageUrl);
-  if (!response.ok) throw new Error("Could not fetch resolved image.");
-
-  const sourceUrl = URL.createObjectURL(await response.blob());
-  try {
-    const image = await loadImage(sourceUrl);
-    const canvas = document.createElement("canvas");
-    canvas.width = state.pixels;
-    canvas.height = state.pixels;
-
-    const context = canvas.getContext("2d");
-    context.drawImage(image, 0, 0, state.pixels, state.pixels);
-
-    const lines = annotationLines(metadata);
-    const lineHeight = 27;
-    const padding = 18;
-    const bandHeight = padding * 2 + lineHeight * lines.length;
-
-    context.fillStyle = "rgba(0, 0, 0, 0.72)";
-    context.fillRect(0, state.pixels - bandHeight, state.pixels, bandHeight);
-    context.fillStyle = "#ff2b2b";
-    context.font = "700 22px Arial, Helvetica, sans-serif";
-    context.textBaseline = "alphabetic";
-    lines.forEach((line, index) => {
-      context.fillText(line, 18, state.pixels - bandHeight + padding + 18 + index * lineHeight);
-    });
-
-    const blob = await new Promise((resolve, reject) => {
-      canvas.toBlob((pngBlob) => {
-        if (pngBlob) resolve(pngBlob);
-        else reject(new Error("Could not create annotated PNG."));
-      }, "image/png");
-    });
-    return blob;
-  } finally {
-    URL.revokeObjectURL(sourceUrl);
-  }
-}
-
-async function saveBlob(blob, filename) {
-  if (navigator.canShare && navigator.share) {
-    const file = new File([blob], filename, { type: blob.type });
-    if (navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: filename });
-      return;
-    }
-  }
-
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.rel = "noreferrer";
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 30000);
-}
-
-function annotationLines(metadata) {
-  return [
-    metadata.object ? `Object: ${metadata.object}` : "",
-    `UTC: ${metadata.utc}`,
-    `Coords: ${metadata.coords}`,
-    `RA: ${metadata.ra}   Dec: ${metadata.dec}`,
-  ].filter(Boolean);
-}
-
-function loadImage(url) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Could not load resolved image."));
-    image.src = url;
-  });
-}
-
-function resolvedImageFilenameBase(raDeg, decDeg, latDeg, lonDeg, date) {
-  return [
-    filenameRa(raDeg),
-    filenameDec(decDeg),
-    filenameCoord(latDeg, "N", "S"),
-    filenameCoord(lonDeg, "E", "W"),
-    `time-${date.toISOString().replace(/\.\d{3}Z$/, "Z").replace(/[-:]/g, "").replace("T", "-")}`,
-  ].join("_");
-}
-
-function filenameRa(raDeg) {
-  const totalSeconds = Math.round((normalizeDegrees(raDeg) / 15) * 3600);
-  const hours = Math.floor(totalSeconds / 3600) % 24;
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return `ra-${String(hours).padStart(2, "0")}h${String(minutes).padStart(2, "0")}m${String(seconds).padStart(2, "0")}s`;
-}
-
-function filenameDec(decDeg) {
-  const direction = decDeg < 0 ? "S" : "N";
-  const totalArcSeconds = Math.round(Math.abs(decDeg) * 3600);
-  const degrees = Math.floor(totalArcSeconds / 3600);
-  const minutes = Math.floor((totalArcSeconds % 3600) / 60);
-  const seconds = totalArcSeconds % 60;
-  return `dec-${String(degrees).padStart(2, "0")}d${String(minutes).padStart(2, "0")}m${String(seconds).padStart(2, "0")}s${direction}`;
-}
-
-function filenameCoord(value, positiveSuffix, negativeSuffix) {
-  const suffix = value >= 0 ? positiveSuffix : negativeSuffix;
-  return `${Math.abs(value).toFixed(5).replace(".", "p")}${suffix}`;
 }
 
 function horizontalToEquatorial(azDeg, altDeg, latDeg, lonDeg, date) {
@@ -748,26 +539,6 @@ function formatCoords(latDeg, lonDeg) {
   const latSuffix = latDeg >= 0 ? "N" : "S";
   const lonSuffix = lonDeg >= 0 ? "E" : "W";
   return `${Math.abs(latDeg).toFixed(5)} ${latSuffix}, ${Math.abs(lonDeg).toFixed(5)} ${lonSuffix}`;
-}
-
-function escapeXml(value) {
-  return String(value).replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "\"": "&quot;",
-    "'": "&apos;",
-  })[character]);
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "\"": "&quot;",
-    "'": "&#39;",
-  })[character]);
 }
 
 function signedDeltaDeg(toDeg, fromDeg) {
