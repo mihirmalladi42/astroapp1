@@ -11,7 +11,6 @@ const state = {
   fov: 2,
   pixels: 768,
   target: null,
-  resolvedImageUrl: "",
 };
 
 const camera = document.querySelector("#camera");
@@ -31,7 +30,6 @@ const guideDirection = document.querySelector("#guideDirection");
 const targetCheck = document.querySelector("#targetCheck");
 const resolveButton = document.querySelector("#resolveButton");
 const imageLink = document.querySelector("#imageLink");
-const downloadLink = document.querySelector("#downloadLink");
 const restartCameraButton = document.querySelector("#restartCameraButton");
 const statusEl = document.querySelector("#status");
 const azimuthValue = document.querySelector("#azimuthValue");
@@ -52,7 +50,6 @@ catalogSearch.addEventListener("input", renderCatalogResults);
 catalogFilter.addEventListener("change", renderCatalogResults);
 typeFilter.addEventListener("change", renderCatalogResults);
 resolveButton.addEventListener("click", () => resolveSky(true));
-downloadLink.addEventListener("click", downloadResolvedImage);
 restartCameraButton.addEventListener("click", restartLiveCamera);
 
 renderCatalogResults();
@@ -504,10 +501,6 @@ async function restartLiveCamera() {
   setStatus("Restoring live camera for the next target.");
   imageLink.href = "https://skyview.gsfc.nasa.gov/current/cgi/query.pl";
   imageLink.classList.add("disabled");
-  downloadLink.href = "https://skyview.gsfc.nasa.gov/current/cgi/query.pl";
-  downloadLink.removeAttribute("download");
-  downloadLink.classList.add("disabled");
-  state.resolvedImageUrl = "";
   restartCameraButton.classList.add("hidden");
   state.lastResolvedKey = "";
 
@@ -541,38 +534,8 @@ function skyViewUrl(raDeg, decDeg) {
 }
 
 function setResolvedImageLink(imageUrl) {
-  state.resolvedImageUrl = imageUrl;
   imageLink.href = imageUrl;
   imageLink.classList.remove("disabled");
-  downloadLink.href = imageUrl;
-  downloadLink.download = "resolved-sky-image.jpg";
-  downloadLink.classList.remove("disabled");
-}
-
-async function downloadResolvedImage(event) {
-  event.preventDefault();
-  if (!state.resolvedImageUrl || downloadLink.classList.contains("disabled")) return;
-
-  setStatus("Downloading raw resolved image.");
-
-  try {
-    const response = await fetch(state.resolvedImageUrl);
-    if (!response.ok) throw new Error("Could not fetch resolved image.");
-
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "resolved-sky-image.jpg";
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
-    setStatus("Raw resolved image download started.");
-  } catch (error) {
-    window.open(state.resolvedImageUrl, "_blank", "noopener,noreferrer");
-    setStatus("Could not force a download here, so I opened the raw image.");
-  }
 }
 
 function horizontalToEquatorial(azDeg, altDeg, latDeg, lonDeg, date) {

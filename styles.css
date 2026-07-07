@@ -124,7 +124,7 @@ button:disabled,
 
 .reticle::before,
 .reticle::after {
-  width: 54px;
+  width: 34px;
   height: 2px;
 }
 
@@ -133,10 +133,7 @@ button:disabled,
 }
 
 .reticle span {
-  width: 84px;
-  height: 84px;
-  border: 1px solid rgba(244, 247, 251, 0.7);
-  border-radius: 50%;
+  display: contents;
 }
 
 .reticle span::before,
