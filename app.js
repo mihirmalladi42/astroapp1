@@ -18,7 +18,6 @@ const state = {
   alignmentSamples: [],
   alignStarMode: false,
   calibrating: false,
-  altitudeSamples: [],
 };
 
 const camera = document.querySelector("#camera");
@@ -60,9 +59,6 @@ const ALIGNMENT_LOW_ALT_MIN = 8;
 const ALIGNMENT_LOW_ALT_MAX = 50;
 const HIGH_ALT_AZ_GUARD_MIN_ALT = 35;
 const AZ_SPIKE_DEG = 55;
-const ALT_SAMPLE_WINDOW = 5;
-const ALT_SMOOTHING = 0.45;
-const ALT_REVERSAL_DEADBAND = 4;
 const infoCache = new Map();
 const SOLAR_SYSTEM_BODIES = [
   { id: "Sun", name: "Sun", body: "Sun", type: "star", aliases: ["Sol"] },
@@ -199,13 +195,12 @@ function stabilizedRawPointing(pointing) {
   const alignmentActive = state.alignmentSamples.length >= ALIGNMENT_MIN_SAMPLES;
 
   if (!previous) {
-    state.altitudeSamples = [{ altDeg: pointing.altDeg, timestamp: pointing.timestamp }];
     state.stableRawPointing = { ...pointing };
     return { ...pointing };
   }
 
   let azDeg = pointing.azDeg;
-  let altDeg = stabilizedAltitude(pointing.altDeg, pointing.timestamp);
+  const altDeg = pointing.altDeg;
   const highAltitude = Math.abs(altDeg) >= HIGH_ALT_AZ_GUARD_MIN_ALT;
 
   if (highAltitude && alignmentActive) {
@@ -227,32 +222,6 @@ function stabilizedRawPointing(pointing) {
   };
   state.stableRawPointing = stabilized;
   return { ...stabilized };
-}
-
-function stabilizedAltitude(rawAltDeg, timestamp) {
-  const previous = state.stableRawPointing;
-  state.altitudeSamples = [
-    ...state.altitudeSamples,
-    { altDeg: rawAltDeg, timestamp },
-  ].slice(-ALT_SAMPLE_WINDOW);
-
-  const medianAlt = median(state.altitudeSamples.map((sample) => sample.altDeg));
-  if (!previous) return medianAlt;
-
-  const smoothedAlt = previous.altDeg + (medianAlt - previous.altDeg) * ALT_SMOOTHING;
-  const rawDirection = Math.sign(rawAltDeg - previous.altDeg);
-  const smoothedDirection = Math.sign(smoothedAlt - previous.altDeg);
-
-  if (
-    rawDirection
-    && smoothedDirection
-    && rawDirection !== smoothedDirection
-    && Math.abs(rawAltDeg - previous.altDeg) < ALT_REVERSAL_DEADBAND
-  ) {
-    return previous.altDeg;
-  }
-
-  return smoothedAlt;
 }
 
 function nearestEquivalentAzimuth(azDeg, referenceAzDeg) {
@@ -289,16 +258,13 @@ function getCompassHeading(event) {
 
 function getCameraAltitude(event) {
   const beta = Number.isFinite(event.beta) ? event.beta : 0;
-  const gamma = Number.isFinite(event.gamma) ? event.gamma : 0;
 
-  // Keep altitude tied to the main camera pitch. Using the full beta/gamma
-  // orientation vector makes Safari jump when it redistributes the same pose
-  // between pitch and roll.
-  const forwardTilt = 90 - Math.abs(beta);
-  const rollPenalty = Math.min(Math.abs(gamma), 45) * 0.18;
-  const sign = beta >= 0 ? 1 : -1;
-
-  return -sign * (forwardTilt - rollPenalty);
+  // Rear-camera altitude should be a single continuous pitch axis. Do not mix
+  // gamma/roll into altitude; near the horizon Safari jitters gamma enough to
+  // make altitude move backward while the phone is tilting upward.
+  return beta >= 0
+    ? beta - 90
+    : beta + 90;
 }
 
 function renderPointing() {
