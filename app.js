@@ -12,6 +12,12 @@ const state = {
   pixels: 768,
   target: null,
   headingSource: "",
+  headingFilter: {
+    azDeg: null,
+    altDeg: null,
+    timestamp: 0,
+    pendingFlip: null,
+  },
 };
 
 const camera = document.querySelector("#camera");
@@ -152,19 +158,22 @@ function getLocation() {
 }
 
 function handleOrientation(event) {
-  const azDeg = getCompassHeading(event);
+  const rawAzDeg = getCompassHeading(event);
   const altDeg = getCameraAltitude(event);
 
-  if (!Number.isFinite(azDeg) || !Number.isFinite(altDeg)) {
+  if (!Number.isFinite(rawAzDeg) || !Number.isFinite(altDeg)) {
     if (state.headingSource) return;
     setStatus("Move the phone in a figure eight if the compass is not ready.");
     return;
   }
 
+  const timestamp = Date.now();
+  const azDeg = stabilizeCompassHeading(rawAzDeg, altDeg, timestamp);
+
   state.pointing = {
     azDeg: normalizeDegrees(azDeg),
     altDeg: clamp(altDeg, -90, 90),
-    timestamp: Date.now(),
+    timestamp,
   };
 
   renderPointing();
@@ -186,6 +195,47 @@ function getCompassHeading(event) {
   }
 
   return NaN;
+}
+
+function stabilizeCompassHeading(rawAzDeg, altDeg, timestamp) {
+  const rawAz = normalizeDegrees(rawAzDeg);
+  const filter = state.headingFilter;
+
+  if (!Number.isFinite(filter.azDeg)) {
+    filter.azDeg = rawAz;
+    filter.altDeg = altDeg;
+    filter.timestamp = timestamp;
+    filter.pendingFlip = null;
+    return rawAz;
+  }
+
+  const headingDelta = Math.abs(signedDeltaDeg(rawAz, filter.azDeg));
+  const altitudeDelta = Math.abs(altDeg - filter.altDeg);
+  const looksLikeSensorFlip = headingDelta > 120 && altitudeDelta < 25;
+
+  if (looksLikeSensorFlip) {
+    const pending = filter.pendingFlip;
+    const samePendingFlip = pending && Math.abs(signedDeltaDeg(rawAz, pending.azDeg)) < 35;
+
+    if (!samePendingFlip) {
+      filter.pendingFlip = { azDeg: rawAz, startedAt: timestamp };
+      filter.timestamp = timestamp;
+      filter.altDeg = altDeg;
+      return filter.azDeg;
+    }
+
+    if (timestamp - pending.startedAt < 2200) {
+      filter.timestamp = timestamp;
+      filter.altDeg = altDeg;
+      return filter.azDeg;
+    }
+  }
+
+  filter.azDeg = rawAz;
+  filter.altDeg = altDeg;
+  filter.timestamp = timestamp;
+  filter.pendingFlip = null;
+  return rawAz;
 }
 
 function getCameraAltitude(event) {
