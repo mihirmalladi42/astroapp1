@@ -4,6 +4,7 @@ const state = {
   stream: null,
   location: null,
   rawPointing: null,
+  stableRawPointing: null,
   pointing: null,
   lastResolvedAt: 0,
   lastResolvedKey: "",
@@ -56,6 +57,8 @@ const ALIGNMENT_MIN_SAMPLES = 3;
 const ALIGNMENT_MAX_SAMPLES = 6;
 const ALIGNMENT_LOW_ALT_MIN = 8;
 const ALIGNMENT_LOW_ALT_MAX = 50;
+const HIGH_ALT_AZ_GUARD_MIN_ALT = 35;
+const AZ_SPIKE_DEG = 55;
 const infoCache = new Map();
 const SOLAR_SYSTEM_BODIES = [
   { id: "Sun", name: "Sun", body: "Sun", type: "star", aliases: ["Sol"] },
@@ -176,14 +179,63 @@ function handleOrientation(event) {
     return;
   }
 
-  state.rawPointing = {
+  const measuredPointing = {
     azDeg: normalizeDegrees(azDeg),
     altDeg: clamp(altDeg, -90, 90),
     timestamp: Date.now(),
   };
+  state.rawPointing = stabilizedRawPointing(measuredPointing);
   state.pointing = calibratedPointing(state.rawPointing);
 
   renderPointing();
+}
+
+function stabilizedRawPointing(pointing) {
+  const previous = state.stableRawPointing;
+  const alignmentActive = state.alignmentSamples.length >= ALIGNMENT_MIN_SAMPLES;
+
+  if (!previous) {
+    state.stableRawPointing = { ...pointing };
+    return { ...pointing };
+  }
+
+  let azDeg = pointing.azDeg;
+  const altDeg = pointing.altDeg;
+  const highAltitude = Math.abs(altDeg) >= HIGH_ALT_AZ_GUARD_MIN_ALT;
+
+  if (highAltitude && alignmentActive) {
+    azDeg = nearestEquivalentAzimuth(azDeg, previous.azDeg);
+
+    const deltaAz = signedDeltaDeg(azDeg, previous.azDeg);
+    const deltaAlt = Math.abs(altDeg - previous.altDeg);
+    const looksLikeCompassSpike = Math.abs(deltaAz) >= AZ_SPIKE_DEG && deltaAlt < 8;
+
+    if (looksLikeCompassSpike) {
+      azDeg = previous.azDeg;
+    }
+  }
+
+  const stabilized = {
+    azDeg: normalizeDegrees(azDeg),
+    altDeg,
+    timestamp: pointing.timestamp,
+  };
+  state.stableRawPointing = stabilized;
+  return { ...stabilized };
+}
+
+function nearestEquivalentAzimuth(azDeg, referenceAzDeg) {
+  const candidates = [
+    normalizeDegrees(azDeg),
+    normalizeDegrees(azDeg + 180),
+    normalizeDegrees(azDeg - 180),
+  ];
+
+  return candidates.reduce((best, candidate) => (
+    Math.abs(signedDeltaDeg(candidate, referenceAzDeg)) < Math.abs(signedDeltaDeg(best, referenceAzDeg))
+      ? candidate
+      : best
+  ), candidates[0]);
 }
 
 function getCompassHeading(event) {
