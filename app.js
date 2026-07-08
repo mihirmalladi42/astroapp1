@@ -14,6 +14,8 @@ const state = {
   target: null,
   headingSource: "",
   calibration: null,
+  alignmentSamples: [],
+  alignStarMode: false,
   calibrating: false,
 };
 
@@ -27,6 +29,8 @@ const catalogSearch = document.querySelector("#catalogSearch");
 const catalogFilter = document.querySelector("#catalogFilter");
 const typeFilter = document.querySelector("#typeFilter");
 const aboveHorizonFilter = document.querySelector("#aboveHorizonFilter");
+const alignStarsButton = document.querySelector("#alignStarsButton");
+const clearAlignButton = document.querySelector("#clearAlignButton");
 const catalogCount = document.querySelector("#catalogCount");
 const catalogResults = document.querySelector("#catalogResults");
 const guideIndicator = document.querySelector("#guideIndicator");
@@ -49,6 +53,10 @@ const coordsValue = document.querySelector("#coordsValue");
 const DEG = Math.PI / 180;
 const RAD = 180 / Math.PI;
 const MAX_RESULTS = 60;
+const ALIGNMENT_MIN_SAMPLES = 3;
+const ALIGNMENT_MAX_SAMPLES = 6;
+const ALIGNMENT_LOW_ALT_MIN = 8;
+const ALIGNMENT_LOW_ALT_MAX = 50;
 const infoCache = new Map();
 const SOLAR_SYSTEM_BODIES = [
   { id: "Sun", name: "Sun", body: "Sun", type: "star", aliases: ["Sol"] },
@@ -68,6 +76,8 @@ catalogSearch.addEventListener("input", renderCatalogResults);
 catalogFilter.addEventListener("change", renderCatalogResults);
 typeFilter.addEventListener("change", renderCatalogResults);
 aboveHorizonFilter.addEventListener("change", renderCatalogResults);
+alignStarsButton.addEventListener("click", showAlignStars);
+clearAlignButton.addEventListener("click", clearAlignment);
 resolveButton.addEventListener("click", () => resolveSky(true));
 imageLink.addEventListener("click", openResolvedImage);
 calibrateButton.addEventListener("click", calibrateToTarget);
@@ -271,6 +281,17 @@ function toggleCatalogPanel() {
   }
 }
 
+function showAlignStars() {
+  state.alignStarMode = true;
+  catalogSearch.value = "";
+  catalogFilter.value = "star";
+  typeFilter.value = "star";
+  aboveHorizonFilter.checked = true;
+  catalogPanel.classList.remove("hidden");
+  renderCatalogResults();
+  setStatus("Choose a recommended low star, tap Guide, center it, then tap Add align star.");
+}
+
 function renderCatalogResults() {
   if (!catalog.objects.length) {
     catalogCount.textContent = "Catalog did not load.";
@@ -283,7 +304,8 @@ function renderCatalogResults() {
   const selectedCatalog = catalogFilter.value;
   const selectedType = typeFilter.value;
   const onlyAboveHorizon = aboveHorizonFilter.checked;
-  const objects = catalogObjects(now);
+  const alignMode = state.alignStarMode && !query;
+  const objects = alignMode ? recommendedAlignStars(now) : catalogObjects(now);
   const matches = [];
 
   for (const object of objects) {
@@ -295,14 +317,19 @@ function renderCatalogResults() {
   }
 
   if (query) {
+    state.alignStarMode = false;
     matches.sort((a, b) => relevanceScore(a, query) - relevanceScore(b, query));
+  } else if (alignMode) {
+    matches.sort((a, b) => alignStarScore(a) - alignStarScore(b));
   }
 
   const visibleMatches = matches.slice(0, MAX_RESULTS);
 
   const totalText = catalog.counts.total ? `${objects.length.toLocaleString()} objects` : "catalog";
   const horizonText = onlyAboveHorizon ? " above horizon" : "";
-  catalogCount.textContent = `${visibleMatches.length.toLocaleString()} shown from ${matches.length.toLocaleString()} matches${horizonText} in ${totalText}`;
+  catalogCount.textContent = alignMode
+    ? `${visibleMatches.length.toLocaleString()} guided alignment stars shown. Add ${Math.max(0, ALIGNMENT_MIN_SAMPLES - state.alignmentSamples.length)} more for alignment.`
+    : `${visibleMatches.length.toLocaleString()} shown from ${matches.length.toLocaleString()} matches${horizonText} in ${totalText}`;
   catalogResults.innerHTML = "";
 
   if (onlyAboveHorizon && !state.location) {
@@ -321,7 +348,9 @@ function renderCatalogResults() {
     const title = document.createElement("strong");
     const meta = document.createElement("span");
     title.textContent = object.name === object.id ? object.id : `${object.id} - ${object.name}`;
-    meta.textContent = `${catalogLabel(object.catalog)} | ${typeLabel(object.type)} | RA ${object.ra.toFixed(4)} deg, Dec ${object.dec.toFixed(4)} deg`;
+    const altAz = object.altAz;
+    const skyText = altAz ? ` | Alt ${altAz.altDeg.toFixed(1)} deg, Az ${altAz.azDeg.toFixed(1)} deg` : "";
+    meta.textContent = `${catalogLabel(object.catalog)} | ${typeLabel(object.type)}${skyText} | RA ${object.ra.toFixed(4)} deg, Dec ${object.dec.toFixed(4)} deg`;
     details.append(title, meta);
 
     const actions = document.createElement("div");
@@ -348,6 +377,27 @@ function renderCatalogResults() {
     empty.textContent = "No matches.";
     catalogResults.append(empty);
   }
+}
+
+function recommendedAlignStars(date) {
+  if (!state.location) return [];
+
+  return catalog.objects
+    .filter((object) => object.catalog === "star" && Number.isFinite(object.mag) && object.mag <= 3.2)
+    .map((object) => {
+      const altAz = equatorialToHorizontal(object.ra, object.dec, state.location.lat, state.location.lon, date);
+      return { ...object, altAz };
+    })
+    .filter((object) => object.altAz.altDeg >= ALIGNMENT_LOW_ALT_MIN && object.altAz.altDeg <= ALIGNMENT_LOW_ALT_MAX)
+    .sort((a, b) => alignStarScore(a) - alignStarScore(b))
+    .slice(0, 30);
+}
+
+function alignStarScore(object) {
+  const altitudeCost = Math.abs((object.altAz?.altDeg ?? 28) - 28);
+  const brightnessCost = Number.isFinite(object.mag) ? object.mag * 4 : 20;
+  const usedCost = state.alignmentSamples.some((sample) => sample.id === object.id) ? 100 : 0;
+  return altitudeCost + brightnessCost + usedCost;
 }
 
 function catalogObjects(date) {
@@ -543,35 +593,61 @@ async function calibrateToTarget() {
   state.calibrating = true;
   calibrateButton.disabled = true;
   flatNorthButton.disabled = true;
-  setStatus(`Hold ${state.target.id} centered. Sampling calibration...`);
+  setStatus(`Hold ${state.target.id} centered. Sampling alignment...`);
 
   try {
     const rawAverage = await averagedRawPointing(2600);
     const date = new Date();
     const target = currentCatalogObject(state.target, date);
-    const targetAltAz = target.altAz || equatorialToHorizontal(
-      target.ra,
-      target.dec,
-      state.location.lat,
-      state.location.lon,
-      date,
-    );
+    const targetAltAz = objectAltAz(target, date);
 
-    applyCalibration({
-      azOffsetDeg: signedDeltaDeg(targetAltAz.azDeg, rawAverage.azDeg),
-      altOffsetDeg: targetAltAz.altDeg - rawAverage.altDeg,
-      targetId: target.id,
-      mode: "target",
+    addAlignmentSample({
+      id: target.id,
+      name: target.name,
+      measuredAzDeg: rawAverage.azDeg,
+      measuredAltDeg: rawAverage.altDeg,
+      trueAzDeg: targetAltAz.azDeg,
+      trueAltDeg: targetAltAz.altDeg,
+      count: rawAverage.count,
       timestamp: Date.now(),
     });
-    setStatus(`Calibrated to ${target.id} from ${rawAverage.count} steady samples.`);
   } catch (error) {
-    setStatus(error.message || "Calibration failed. Hold steadier and try again.");
+    setStatus(error.message || "Alignment failed. Hold steadier and try again.");
   } finally {
     state.calibrating = false;
     calibrateButton.disabled = false;
     flatNorthButton.disabled = !state.running;
   }
+}
+
+function addAlignmentSample(sample) {
+  const withoutSameTarget = state.alignmentSamples.filter((existing) => existing.id !== sample.id);
+  state.alignmentSamples = [...withoutSameTarget, sample]
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, ALIGNMENT_MAX_SAMPLES);
+
+  state.calibration = {
+    azOffsetDeg: signedDeltaDeg(sample.trueAzDeg, sample.measuredAzDeg),
+    altOffsetDeg: sample.trueAltDeg - sample.measuredAltDeg,
+    targetId: sample.id,
+    mode: "target",
+    timestamp: sample.timestamp,
+  };
+
+  refreshCalibrationState();
+
+  const needed = Math.max(0, ALIGNMENT_MIN_SAMPLES - state.alignmentSamples.length);
+  const readyText = needed
+    ? `${needed} more star${needed === 1 ? "" : "s"} needed.`
+    : `Multi-star alignment active with ${state.alignmentSamples.length} stars.`;
+  setStatus(`Added ${sample.id} from ${sample.count} steady samples. ${readyText}`);
+}
+
+function clearAlignment() {
+  state.alignmentSamples = [];
+  state.calibration = null;
+  refreshCalibrationState();
+  setStatus("Alignment cleared. Use Align stars to collect 3-6 low-star samples.");
 }
 
 async function calibrateFlatNorth() {
@@ -606,11 +682,18 @@ async function calibrateFlatNorth() {
 }
 
 function applyCalibration(calibration) {
+  state.alignmentSamples = [];
   state.calibration = calibration;
+  refreshCalibrationState();
+}
+
+function refreshCalibrationState() {
+  clearAlignButton.disabled = !state.calibration && state.alignmentSamples.length === 0;
   if (state.rawPointing) {
     state.pointing = calibratedPointing(state.rawPointing);
     renderPointing();
   }
+  renderCatalogResults();
 }
 
 function averagedRawPointing(durationMs) {
@@ -682,6 +765,10 @@ function median(values) {
 }
 
 function calibratedPointing(rawPointing) {
+  if (state.alignmentSamples.length >= ALIGNMENT_MIN_SAMPLES) {
+    return multiStarCalibratedPointing(rawPointing);
+  }
+
   if (!state.calibration) return { ...rawPointing };
 
   return {
@@ -691,12 +778,35 @@ function calibratedPointing(rawPointing) {
   };
 }
 
+function multiStarCalibratedPointing(rawPointing) {
+  let totalWeight = 0;
+  let azOffset = 0;
+  let altOffset = 0;
+
+  for (const sample of state.alignmentSamples) {
+    const deltaAz = signedDeltaDeg(rawPointing.azDeg, sample.measuredAzDeg);
+    const deltaAlt = rawPointing.altDeg - sample.measuredAltDeg;
+    const distance = Math.hypot(deltaAz * Math.cos(rawPointing.altDeg * DEG), deltaAlt);
+    const weight = 1 / Math.max(6, distance) ** 2;
+
+    totalWeight += weight;
+    azOffset += signedDeltaDeg(sample.trueAzDeg, sample.measuredAzDeg) * weight;
+    altOffset += (sample.trueAltDeg - sample.measuredAltDeg) * weight;
+  }
+
+  return {
+    azDeg: normalizeDegrees(rawPointing.azDeg + azOffset / totalWeight),
+    altDeg: clamp(rawPointing.altDeg + altOffset / totalWeight, -90, 90),
+    timestamp: rawPointing.timestamp,
+  };
+}
+
 function updateGuide(date = new Date()) {
   if (!state.target) return;
 
   const target = currentCatalogObject(state.target, date);
   guideIndicator.classList.remove("hidden");
-  guideTarget.textContent = state.calibration ? `${target.id} calibrated` : target.id;
+  guideTarget.textContent = alignmentLabel(target.id);
 
   if (!state.location || !state.pointing) {
     guideDirection.textContent = "Start sensors";
@@ -705,13 +815,7 @@ function updateGuide(date = new Date()) {
     return;
   }
 
-  const targetAltAz = target.altAz || equatorialToHorizontal(
-    target.ra,
-    target.dec,
-    state.location.lat,
-    state.location.lon,
-    date,
-  );
+  const targetAltAz = objectAltAz(target, date);
 
   const deltaAz = signedDeltaDeg(targetAltAz.azDeg, state.pointing.azDeg);
   const deltaAlt = targetAltAz.altDeg - state.pointing.altDeg;
@@ -725,6 +829,28 @@ function updateGuide(date = new Date()) {
   guideDirection.textContent = isInResolvedImage
     ? `ON TARGET | Alt ${targetAltAz.altDeg.toFixed(1)} deg, Az ${targetAltAz.azDeg.toFixed(1)} deg`
     : [azText, altText].filter(Boolean).join(" / ");
+}
+
+function objectAltAz(object, date) {
+  if (object.catalog === "solar" && object.altAz) return object.altAz;
+
+  return equatorialToHorizontal(
+    object.ra,
+    object.dec,
+    state.location.lat,
+    state.location.lon,
+    date,
+  );
+}
+
+function alignmentLabel(targetId) {
+  if (state.alignmentSamples.length >= ALIGNMENT_MIN_SAMPLES) {
+    return `${targetId} aligned ${state.alignmentSamples.length}`;
+  }
+  if (state.alignmentSamples.length > 0) {
+    return `${targetId} align ${state.alignmentSamples.length}/${ALIGNMENT_MIN_SAMPLES}`;
+  }
+  return state.calibration ? `${targetId} calibrated` : targetId;
 }
 
 function searchText(object) {
