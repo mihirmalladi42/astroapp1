@@ -59,6 +59,7 @@ const ALIGNMENT_LOW_ALT_MIN = 8;
 const ALIGNMENT_LOW_ALT_MAX = 50;
 const HIGH_ALT_AZ_GUARD_MIN_ALT = 35;
 const AZ_SPIKE_DEG = 55;
+const ALT_SPIKE_DEG = 10;
 const infoCache = new Map();
 const SOLAR_SYSTEM_BODIES = [
   { id: "Sun", name: "Sun", body: "Sun", type: "star", aliases: ["Sol"] },
@@ -200,7 +201,7 @@ function stabilizedRawPointing(pointing) {
   }
 
   let azDeg = pointing.azDeg;
-  const altDeg = pointing.altDeg;
+  let altDeg = pointing.altDeg;
   const highAltitude = Math.abs(altDeg) >= HIGH_ALT_AZ_GUARD_MIN_ALT;
 
   if (highAltitude && alignmentActive) {
@@ -213,6 +214,12 @@ function stabilizedRawPointing(pointing) {
     if (looksLikeCompassSpike) {
       azDeg = previous.azDeg;
     }
+  }
+
+  const altDelta = altDeg - previous.altDeg;
+  const azDelta = signedDeltaDeg(azDeg, previous.azDeg);
+  if (Math.abs(altDelta) >= ALT_SPIKE_DEG && Math.abs(azDelta) < 16) {
+    altDeg = previous.altDeg;
   }
 
   const stabilized = {
@@ -260,11 +267,11 @@ function getCameraAltitude(event) {
   const beta = Number.isFinite(event.beta) ? event.beta : 0;
   const gamma = Number.isFinite(event.gamma) ? event.gamma : 0;
 
-  // This uses the rear camera as the pointing axis. It is intentionally simple:
-  // beta controls the main tilt, while gamma slightly reduces altitude when the
-  // phone is rolled sideways.
+  // Keep altitude tied to the main camera pitch. Using the full beta/gamma
+  // orientation vector makes Safari jump when it redistributes the same pose
+  // between pitch and roll.
   const forwardTilt = 90 - Math.abs(beta);
-  const rollPenalty = Math.abs(gamma) * 0.35;
+  const rollPenalty = Math.min(Math.abs(gamma), 45) * 0.18;
   const sign = beta >= 0 ? 1 : -1;
 
   return -sign * (forwardTilt - rollPenalty);
