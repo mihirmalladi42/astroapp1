@@ -14,6 +14,7 @@ const state = {
   target: null,
   headingSource: "",
   calibration: null,
+  calibrating: false,
 };
 
 const camera = document.querySelector("#camera");
@@ -35,6 +36,7 @@ const targetCheck = document.querySelector("#targetCheck");
 const resolveButton = document.querySelector("#resolveButton");
 const imageLink = document.querySelector("#imageLink");
 const calibrateButton = document.querySelector("#calibrateButton");
+const flatNorthButton = document.querySelector("#flatNorthButton");
 const restartCameraButton = document.querySelector("#restartCameraButton");
 const statusEl = document.querySelector("#status");
 const azimuthValue = document.querySelector("#azimuthValue");
@@ -69,6 +71,7 @@ aboveHorizonFilter.addEventListener("change", renderCatalogResults);
 resolveButton.addEventListener("click", () => resolveSky(true));
 imageLink.addEventListener("click", openResolvedImage);
 calibrateButton.addEventListener("click", calibrateToTarget);
+flatNorthButton.addEventListener("click", calibrateFlatNorth);
 restartCameraButton.addEventListener("click", restartLiveCamera);
 
 renderCatalogResults();
@@ -90,6 +93,7 @@ async function startExperience() {
 
     state.running = true;
     resolveButton.disabled = false;
+    flatNorthButton.disabled = false;
     startButton.textContent = "Running";
     setStatus("Point at the sky, then tap Resolve to create a SkyView image link.");
   } catch (error) {
@@ -529,31 +533,152 @@ function resolveCatalogObject(object) {
   setStatus(`Catalog target ready: ${object.id} at RA ${formatRa(currentObject.ra)}, Dec ${formatDec(currentObject.dec)}.`);
 }
 
-function calibrateToTarget() {
+async function calibrateToTarget() {
   if (!state.target || !state.rawPointing || !state.location) {
     setStatus("Select a target and start sensors before calibrating.");
     return;
   }
+  if (state.calibrating) return;
 
-  const date = new Date();
-  const target = currentCatalogObject(state.target, date);
-  const targetAltAz = target.altAz || equatorialToHorizontal(
-    target.ra,
-    target.dec,
-    state.location.lat,
-    state.location.lon,
-    date,
-  );
+  state.calibrating = true;
+  calibrateButton.disabled = true;
+  flatNorthButton.disabled = true;
+  setStatus(`Hold ${state.target.id} centered. Sampling calibration...`);
 
-  state.calibration = {
-    azOffsetDeg: signedDeltaDeg(targetAltAz.azDeg, state.rawPointing.azDeg),
-    altOffsetDeg: targetAltAz.altDeg - state.rawPointing.altDeg,
-    targetId: target.id,
-    timestamp: Date.now(),
+  try {
+    const rawAverage = await averagedRawPointing(2600);
+    const date = new Date();
+    const target = currentCatalogObject(state.target, date);
+    const targetAltAz = target.altAz || equatorialToHorizontal(
+      target.ra,
+      target.dec,
+      state.location.lat,
+      state.location.lon,
+      date,
+    );
+
+    applyCalibration({
+      azOffsetDeg: signedDeltaDeg(targetAltAz.azDeg, rawAverage.azDeg),
+      altOffsetDeg: targetAltAz.altDeg - rawAverage.altDeg,
+      targetId: target.id,
+      mode: "target",
+      timestamp: Date.now(),
+    });
+    setStatus(`Calibrated to ${target.id} from ${rawAverage.count} steady samples.`);
+  } catch (error) {
+    setStatus(error.message || "Calibration failed. Hold steadier and try again.");
+  } finally {
+    state.calibrating = false;
+    calibrateButton.disabled = false;
+    flatNorthButton.disabled = !state.running;
+  }
+}
+
+async function calibrateFlatNorth() {
+  if (!state.rawPointing) {
+    setStatus("Start sensors before flat north calibration.");
+    return;
+  }
+  if (state.calibrating) return;
+
+  state.calibrating = true;
+  calibrateButton.disabled = true;
+  flatNorthButton.disabled = true;
+  setStatus("Place phone flat and point its top edge true north. Sampling...");
+
+  try {
+    const rawAverage = await averagedRawPointing(2200);
+    applyCalibration({
+      azOffsetDeg: signedDeltaDeg(0, rawAverage.azDeg),
+      altOffsetDeg: state.calibration?.altOffsetDeg || 0,
+      targetId: "Flat north",
+      mode: "flat-north",
+      timestamp: Date.now(),
+    });
+    setStatus(`Flat north heading calibrated from ${rawAverage.count} steady samples. Sky-target calibration is still more accurate.`);
+  } catch (error) {
+    setStatus(error.message || "Flat north calibration failed. Hold steadier and try again.");
+  } finally {
+    state.calibrating = false;
+    calibrateButton.disabled = false;
+    flatNorthButton.disabled = !state.running;
+  }
+}
+
+function applyCalibration(calibration) {
+  state.calibration = calibration;
+  if (state.rawPointing) {
+    state.pointing = calibratedPointing(state.rawPointing);
+    renderPointing();
+  }
+}
+
+function averagedRawPointing(durationMs) {
+  const samples = [];
+  const startedAt = Date.now();
+
+  return new Promise((resolve, reject) => {
+    const timer = window.setInterval(() => {
+      if (state.rawPointing) {
+        samples.push({ ...state.rawPointing });
+      }
+
+      if (Date.now() - startedAt >= durationMs) {
+        window.clearInterval(timer);
+        const average = stablePointingAverage(samples);
+        if (!average) {
+          reject(new Error("Not enough stable sensor readings. Hold steadier and try again."));
+          return;
+        }
+        resolve(average);
+      }
+    }, 80);
+  });
+}
+
+function stablePointingAverage(samples) {
+  const usable = samples.filter((sample) => (
+    Number.isFinite(sample.azDeg)
+    && Number.isFinite(sample.altDeg)
+    && Date.now() - sample.timestamp < 4000
+  ));
+
+  if (usable.length < 8) return null;
+
+  const firstPassAz = circularMeanDeg(usable.map((sample) => sample.azDeg));
+  const firstPassAlt = median(usable.map((sample) => sample.altDeg));
+  const stable = usable.filter((sample) => (
+    Math.abs(signedDeltaDeg(sample.azDeg, firstPassAz)) <= 30
+    && Math.abs(sample.altDeg - firstPassAlt) <= 10
+  ));
+
+  if (stable.length < Math.max(6, usable.length * 0.45)) return null;
+
+  return {
+    azDeg: circularMeanDeg(stable.map((sample) => sample.azDeg)),
+    altDeg: stable.reduce((sum, sample) => sum + sample.altDeg, 0) / stable.length,
+    count: stable.length,
   };
-  state.pointing = calibratedPointing(state.rawPointing);
-  renderPointing();
-  setStatus(`Calibrated to ${target.id}. Guidance now uses corrected pointing.`);
+}
+
+function circularMeanDeg(values) {
+  let x = 0;
+  let y = 0;
+
+  for (const value of values) {
+    x += Math.cos(value * DEG);
+    y += Math.sin(value * DEG);
+  }
+
+  return normalizeDegrees(Math.atan2(y, x) * RAD);
+}
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 function calibratedPointing(rawPointing) {
@@ -571,7 +696,7 @@ function updateGuide(date = new Date()) {
 
   const target = currentCatalogObject(state.target, date);
   guideIndicator.classList.remove("hidden");
-  guideTarget.textContent = target.id;
+  guideTarget.textContent = state.calibration ? `${target.id} calibrated` : target.id;
 
   if (!state.location || !state.pointing) {
     guideDirection.textContent = "Start sensors";

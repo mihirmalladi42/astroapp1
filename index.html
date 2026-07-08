@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Sky Lens</title>
-    <link rel="stylesheet" href="styles.css?v=20260708-calibration">
+    <link rel="stylesheet" href="styles.css?v=20260708-noise-proof-calibration">
   </head>
   <body>
     <main class="app-shell">
@@ -95,12 +95,13 @@
           <button id="resolveButton" type="button" disabled>Resolve</button>
           <a id="imageLink" class="image-link disabled" href="https://skyview.gsfc.nasa.gov/current/cgi/query.pl" target="_blank" rel="noreferrer">Open resolved image</a>
           <button id="calibrateButton" class="hidden" type="button">Calibrate</button>
+          <button id="flatNorthButton" type="button" disabled>Flat north</button>
           <button id="restartCameraButton" class="wide-control hidden" type="button">Live camera again</button>
         </div>
       </section>
     </main>
-    <script src="catalog.js?v=20260708-calibration"></script>
+    <script src="catalog.js?v=20260708-noise-proof-calibration"></script>
     <script src="vendor/astronomy.browser.min.js?v=2.1.19"></script>
-    <script src="app.js?v=20260708-calibration"></script>
+    <script src="app.js?v=20260708-noise-proof-calibration"></script>
   </body>
 </html>
