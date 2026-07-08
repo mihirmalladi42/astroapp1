@@ -8,9 +8,10 @@ const state = {
   lastResolvedKey: "",
   running: false,
   survey: "DSS2 Red",
-  fov: 2,
+  fov: 5,
   pixels: 768,
   target: null,
+  headingSource: "",
 };
 
 const camera = document.querySelector("#camera");
@@ -155,6 +156,7 @@ function handleOrientation(event) {
   const altDeg = getCameraAltitude(event);
 
   if (!Number.isFinite(azDeg) || !Number.isFinite(altDeg)) {
+    if (state.headingSource) return;
     setStatus("Move the phone in a figure eight if the compass is not ready.");
     return;
   }
@@ -170,14 +172,16 @@ function handleOrientation(event) {
 
 function getCompassHeading(event) {
   if (Number.isFinite(event.webkitCompassHeading)) {
+    state.headingSource = "webkit";
     return event.webkitCompassHeading;
   }
 
-  if (event.absolute && Number.isFinite(event.alpha)) {
-    return 360 - event.alpha;
+  if (state.headingSource === "webkit") {
+    return NaN;
   }
 
-  if (Number.isFinite(event.alpha)) {
+  if (event.absolute && Number.isFinite(event.alpha)) {
+    state.headingSource = "absolute-alpha";
     return 360 - event.alpha;
   }
 
