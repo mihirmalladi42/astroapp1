@@ -40,7 +40,6 @@ const targetCheck = document.querySelector("#targetCheck");
 const resolveButton = document.querySelector("#resolveButton");
 const imageLink = document.querySelector("#imageLink");
 const calibrateButton = document.querySelector("#calibrateButton");
-const flatNorthButton = document.querySelector("#flatNorthButton");
 const restartCameraButton = document.querySelector("#restartCameraButton");
 const statusEl = document.querySelector("#status");
 const azimuthValue = document.querySelector("#azimuthValue");
@@ -81,7 +80,6 @@ clearAlignButton.addEventListener("click", clearAlignment);
 resolveButton.addEventListener("click", () => resolveSky(true));
 imageLink.addEventListener("click", openResolvedImage);
 calibrateButton.addEventListener("click", calibrateToTarget);
-flatNorthButton.addEventListener("click", calibrateFlatNorth);
 restartCameraButton.addEventListener("click", restartLiveCamera);
 
 renderCatalogResults();
@@ -103,7 +101,6 @@ async function startExperience() {
 
     state.running = true;
     resolveButton.disabled = false;
-    flatNorthButton.disabled = false;
     startButton.textContent = "Running";
     setStatus("Point at the sky, then tap Resolve to create a SkyView image link.");
   } catch (error) {
@@ -592,7 +589,6 @@ async function calibrateToTarget() {
 
   state.calibrating = true;
   calibrateButton.disabled = true;
-  flatNorthButton.disabled = true;
   setStatus(`Hold ${state.target.id} centered. Sampling alignment...`);
 
   try {
@@ -616,7 +612,6 @@ async function calibrateToTarget() {
   } finally {
     state.calibrating = false;
     calibrateButton.disabled = false;
-    flatNorthButton.disabled = !state.running;
   }
 }
 
@@ -648,43 +643,6 @@ function clearAlignment() {
   state.calibration = null;
   refreshCalibrationState();
   setStatus("Alignment cleared. Use Align stars to collect 3-6 low-star samples.");
-}
-
-async function calibrateFlatNorth() {
-  if (!state.rawPointing) {
-    setStatus("Start sensors before flat north calibration.");
-    return;
-  }
-  if (state.calibrating) return;
-
-  state.calibrating = true;
-  calibrateButton.disabled = true;
-  flatNorthButton.disabled = true;
-  setStatus("Place phone flat and point its top edge true north. Sampling...");
-
-  try {
-    const rawAverage = await averagedRawPointing(2200);
-    applyCalibration({
-      azOffsetDeg: signedDeltaDeg(0, rawAverage.azDeg),
-      altOffsetDeg: state.calibration?.altOffsetDeg || 0,
-      targetId: "Flat north",
-      mode: "flat-north",
-      timestamp: Date.now(),
-    });
-    setStatus(`Flat north heading calibrated from ${rawAverage.count} steady samples. Sky-target calibration is still more accurate.`);
-  } catch (error) {
-    setStatus(error.message || "Flat north calibration failed. Hold steadier and try again.");
-  } finally {
-    state.calibrating = false;
-    calibrateButton.disabled = false;
-    flatNorthButton.disabled = !state.running;
-  }
-}
-
-function applyCalibration(calibration) {
-  state.alignmentSamples = [];
-  state.calibration = calibration;
-  refreshCalibrationState();
 }
 
 function refreshCalibrationState() {

@@ -27,8 +27,8 @@ input,
 select {
   border: 0;
   border-radius: 8px;
-  min-height: 44px;
-  padding: 0 16px;
+  min-height: 40px;
+  padding: 0 12px;
   font: inherit;
 }
 
@@ -269,42 +269,53 @@ button:disabled,
   position: absolute;
   left: max(14px, env(safe-area-inset-left));
   right: max(14px, env(safe-area-inset-right));
-  top: calc(170px + env(safe-area-inset-top));
+  top: calc(160px + env(safe-area-inset-top));
   z-index: 5;
-  max-height: calc(100dvh - 384px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  min-height: 170px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 318px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  min-height: 220px;
   overflow: hidden;
-  padding: 10px;
+  padding: 8px;
 }
 
 .catalog-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px;
+  flex: 0 0 auto;
 }
 
 .catalog-grid label {
   min-width: 0;
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   font-weight: 700;
   color: #afbac5;
 }
 
 .catalog-grid input,
 .catalog-grid select {
-  margin-top: 4px;
+  min-height: 34px;
+  margin-top: 3px;
+  font-size: 0.82rem;
+}
+
+.catalog-grid button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 0.82rem;
 }
 
 .checkbox-control {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 34px;
+  gap: 6px;
+  min-height: 30px;
 }
 
 .checkbox-control input {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   margin: 0;
   accent-color: #8ee7ff;
 }
@@ -314,33 +325,36 @@ button:disabled,
 }
 
 .catalog-count {
-  margin: 9px 2px 8px;
-  font-size: 0.72rem;
+  flex: 0 0 auto;
+  margin: 6px 2px;
+  font-size: 0.66rem;
   color: #afbac5;
 }
 
 .catalog-results {
   display: grid;
-  gap: 7px;
-  max-height: calc(100dvh - 524px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  gap: 5px;
+  min-height: 0;
   overflow: auto;
-  padding-right: 2px;
+  padding: 0 2px 2px 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .catalog-result {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   border-radius: 8px;
-  padding: 8px;
+  padding: 6px;
   background: rgba(255, 255, 255, 0.07);
 }
 
 .catalog-actions {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 6px;
+  gap: 4px;
 }
 
 .catalog-result strong,
@@ -352,27 +366,28 @@ button:disabled,
 }
 
 .catalog-result strong {
-  font-size: 0.9rem;
+  font-size: 0.82rem;
 }
 
 .catalog-result span {
-  margin-top: 2px;
-  font-size: 0.72rem;
+  margin-top: 1px;
+  font-size: 0.64rem;
   color: #afbac5;
 }
 
 .catalog-result button {
-  min-height: 38px;
-  padding: 0 12px;
+  min-height: 30px;
+  padding: 0 9px;
+  font-size: 0.78rem;
 }
 
 .catalog-info {
   grid-column: 1 / -1;
   margin: 2px 0 0;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding-top: 8px;
+  padding-top: 6px;
   color: #d8e1ea;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   line-height: 1.35;
 }
 
