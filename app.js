@@ -3,6 +3,7 @@ const SKYVIEW_ENDPOINT = "https://skyview.gsfc.nasa.gov/current/cgi/runquery.pl"
 const state = {
   stream: null,
   location: null,
+  rawPointing: null,
   pointing: null,
   lastResolvedAt: 0,
   lastResolvedKey: "",
@@ -12,12 +13,7 @@ const state = {
   pixels: 768,
   target: null,
   headingSource: "",
-  headingFilter: {
-    azDeg: null,
-    altDeg: null,
-    timestamp: 0,
-    pendingFlip: null,
-  },
+  calibration: null,
 };
 
 const camera = document.querySelector("#camera");
@@ -38,6 +34,7 @@ const guideDirection = document.querySelector("#guideDirection");
 const targetCheck = document.querySelector("#targetCheck");
 const resolveButton = document.querySelector("#resolveButton");
 const imageLink = document.querySelector("#imageLink");
+const calibrateButton = document.querySelector("#calibrateButton");
 const restartCameraButton = document.querySelector("#restartCameraButton");
 const statusEl = document.querySelector("#status");
 const azimuthValue = document.querySelector("#azimuthValue");
@@ -71,6 +68,7 @@ typeFilter.addEventListener("change", renderCatalogResults);
 aboveHorizonFilter.addEventListener("change", renderCatalogResults);
 resolveButton.addEventListener("click", () => resolveSky(true));
 imageLink.addEventListener("click", openResolvedImage);
+calibrateButton.addEventListener("click", calibrateToTarget);
 restartCameraButton.addEventListener("click", restartLiveCamera);
 
 renderCatalogResults();
@@ -158,23 +156,21 @@ function getLocation() {
 }
 
 function handleOrientation(event) {
-  const rawAzDeg = getCompassHeading(event);
+  const azDeg = getCompassHeading(event);
   const altDeg = getCameraAltitude(event);
 
-  if (!Number.isFinite(rawAzDeg) || !Number.isFinite(altDeg)) {
+  if (!Number.isFinite(azDeg) || !Number.isFinite(altDeg)) {
     if (state.headingSource) return;
     setStatus("Move the phone in a figure eight if the compass is not ready.");
     return;
   }
 
-  const timestamp = Date.now();
-  const azDeg = stabilizeCompassHeading(rawAzDeg, altDeg, timestamp);
-
-  state.pointing = {
+  state.rawPointing = {
     azDeg: normalizeDegrees(azDeg),
     altDeg: clamp(altDeg, -90, 90),
-    timestamp,
+    timestamp: Date.now(),
   };
+  state.pointing = calibratedPointing(state.rawPointing);
 
   renderPointing();
 }
@@ -195,47 +191,6 @@ function getCompassHeading(event) {
   }
 
   return NaN;
-}
-
-function stabilizeCompassHeading(rawAzDeg, altDeg, timestamp) {
-  const rawAz = normalizeDegrees(rawAzDeg);
-  const filter = state.headingFilter;
-
-  if (!Number.isFinite(filter.azDeg)) {
-    filter.azDeg = rawAz;
-    filter.altDeg = altDeg;
-    filter.timestamp = timestamp;
-    filter.pendingFlip = null;
-    return rawAz;
-  }
-
-  const headingDelta = Math.abs(signedDeltaDeg(rawAz, filter.azDeg));
-  const altitudeDelta = Math.abs(altDeg - filter.altDeg);
-  const looksLikeSensorFlip = headingDelta > 120 && altitudeDelta < 25;
-
-  if (looksLikeSensorFlip) {
-    const pending = filter.pendingFlip;
-    const samePendingFlip = pending && Math.abs(signedDeltaDeg(rawAz, pending.azDeg)) < 35;
-
-    if (!samePendingFlip) {
-      filter.pendingFlip = { azDeg: rawAz, startedAt: timestamp };
-      filter.timestamp = timestamp;
-      filter.altDeg = altDeg;
-      return filter.azDeg;
-    }
-
-    if (timestamp - pending.startedAt < 2200) {
-      filter.timestamp = timestamp;
-      filter.altDeg = altDeg;
-      return filter.azDeg;
-    }
-  }
-
-  filter.azDeg = rawAz;
-  filter.altDeg = altDeg;
-  filter.timestamp = timestamp;
-  filter.pendingFlip = null;
-  return rawAz;
 }
 
 function getCameraAltitude(event) {
@@ -565,12 +520,50 @@ function resolveCatalogObject(object) {
   skyImage.removeAttribute("src");
   skyImage.classList.remove("visible");
   setResolvedImageLink(url);
+  calibrateButton.classList.remove("hidden");
   restartCameraButton.classList.remove("hidden");
   raValue.textContent = formatRa(currentObject.ra);
   decValue.textContent = formatDec(currentObject.dec);
   catalogPanel.classList.add("hidden");
   updateGuide(new Date());
   setStatus(`Catalog target ready: ${object.id} at RA ${formatRa(currentObject.ra)}, Dec ${formatDec(currentObject.dec)}.`);
+}
+
+function calibrateToTarget() {
+  if (!state.target || !state.rawPointing || !state.location) {
+    setStatus("Select a target and start sensors before calibrating.");
+    return;
+  }
+
+  const date = new Date();
+  const target = currentCatalogObject(state.target, date);
+  const targetAltAz = target.altAz || equatorialToHorizontal(
+    target.ra,
+    target.dec,
+    state.location.lat,
+    state.location.lon,
+    date,
+  );
+
+  state.calibration = {
+    azOffsetDeg: signedDeltaDeg(targetAltAz.azDeg, state.rawPointing.azDeg),
+    altOffsetDeg: targetAltAz.altDeg - state.rawPointing.altDeg,
+    targetId: target.id,
+    timestamp: Date.now(),
+  };
+  state.pointing = calibratedPointing(state.rawPointing);
+  renderPointing();
+  setStatus(`Calibrated to ${target.id}. Guidance now uses corrected pointing.`);
+}
+
+function calibratedPointing(rawPointing) {
+  if (!state.calibration) return { ...rawPointing };
+
+  return {
+    azDeg: normalizeDegrees(rawPointing.azDeg + state.calibration.azOffsetDeg),
+    altDeg: clamp(rawPointing.altDeg + state.calibration.altOffsetDeg, -90, 90),
+    timestamp: rawPointing.timestamp,
+  };
 }
 
 function updateGuide(date = new Date()) {
@@ -671,6 +664,7 @@ async function restartLiveCamera() {
   setStatus("Restoring live camera for the next target.");
   imageLink.href = "https://skyview.gsfc.nasa.gov/current/cgi/query.pl";
   imageLink.classList.add("disabled");
+  calibrateButton.classList.toggle("hidden", !state.target);
   restartCameraButton.classList.add("hidden");
   state.lastResolvedKey = "";
 
