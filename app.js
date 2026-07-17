@@ -14,6 +14,8 @@ const state = {
   pixels: 768,
   target: null,
   headingSource: "",
+  magneticDeclinationDeg: null,
+  compassAccuracyDeg: null,
   calibration: null,
   alignmentSamples: [],
   alignStarMode: false,
@@ -153,11 +155,21 @@ function getLocation() {
   return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        state.location = {
-          lat: position.coords.latitude,
-          lon: position.coords.longitude,
-        };
-        resolve();
+        try {
+          state.location = {
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+          };
+          state.magneticDeclinationDeg = SkyLensPointing.magneticDeclinationDeg(
+            window.Geomagnetism,
+            state.location.lat,
+            state.location.lon,
+            new Date(),
+          );
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
       },
       () => reject(new Error("Location permission was not granted.")),
       {
@@ -170,18 +182,30 @@ function getLocation() {
 }
 
 function handleOrientation(event) {
-  const azDeg = getCompassHeading(event);
-  const altDeg = getCameraAltitude(event);
+  if (state.headingSource === "webkit" && !Number.isFinite(event.webkitCompassHeading)) {
+    return;
+  }
 
-  if (!Number.isFinite(azDeg) || !Number.isFinite(altDeg)) {
+  const orientation = SkyLensPointing.readRearCameraPointing(
+    event,
+    state.magneticDeclinationDeg,
+  );
+
+  if (!orientation.valid) {
+    if (orientation.reason === "compass-uncalibrated") {
+      setStatus("Compass needs calibration. Move the phone in a figure eight, then aim again.");
+      return;
+    }
     if (state.headingSource) return;
     setStatus("Move the phone in a figure eight if the compass is not ready.");
     return;
   }
 
+  state.headingSource = orientation.source;
+  state.compassAccuracyDeg = orientation.compassAccuracyDeg;
   const measuredPointing = {
-    azDeg: normalizeDegrees(azDeg),
-    altDeg: clamp(altDeg, -90, 90),
+    azDeg: orientation.azDeg,
+    altDeg: clamp(orientation.altDeg, -90, 90),
     timestamp: Date.now(),
   };
   state.rawPointing = stabilizedRawPointing(measuredPointing);
@@ -236,35 +260,6 @@ function nearestEquivalentAzimuth(azDeg, referenceAzDeg) {
       ? candidate
       : best
   ), candidates[0]);
-}
-
-function getCompassHeading(event) {
-  if (Number.isFinite(event.webkitCompassHeading)) {
-    state.headingSource = "webkit";
-    return event.webkitCompassHeading;
-  }
-
-  if (state.headingSource === "webkit") {
-    return NaN;
-  }
-
-  if (event.absolute && Number.isFinite(event.alpha)) {
-    state.headingSource = "absolute-alpha";
-    return 360 - event.alpha;
-  }
-
-  return NaN;
-}
-
-function getCameraAltitude(event) {
-  const beta = Number.isFinite(event.beta) ? event.beta : 0;
-
-  // Rear-camera altitude should be a single continuous pitch axis. Do not mix
-  // gamma/roll into altitude; near the horizon Safari jitters gamma enough to
-  // make altitude move backward while the phone is tilting upward.
-  return beta >= 0
-    ? beta - 90
-    : beta + 90;
 }
 
 function renderPointing() {
