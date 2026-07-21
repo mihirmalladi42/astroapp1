@@ -5,6 +5,8 @@ const state = {
   location: null,
   rawPointing: null,
   stableRawPointing: null,
+  azimuthContinuity: null,
+  pendingAzimuthSpike: null,
   pointing: null,
   lastResolvedAt: 0,
   lastResolvedKey: "",
@@ -60,7 +62,13 @@ const ALIGNMENT_MAX_SAMPLES = 6;
 const ALIGNMENT_LOW_ALT_MIN = 8;
 const ALIGNMENT_LOW_ALT_MAX = 50;
 const HIGH_ALT_AZ_GUARD_MIN_ALT = 35;
+const AZ_BRANCH_NORMAL_MAX_ALT = 45;
+const AZ_BRANCH_TRANSITION_MAX_ALT = 55;
+const AZ_BRANCH_JUMP_MIN_DEG = 120;
+const AZ_BRANCH_MAX_ALT_STEP_DEG = 8;
+const AZ_BRANCH_MAX_GAP_MS = 1000;
 const AZ_SPIKE_DEG = 55;
+const AZ_SPIKE_CONFIRM_TOLERANCE_DEG = 12;
 const infoCache = new Map();
 const SOLAR_SYSTEM_BODIES = [
   { id: "Sun", name: "Sun", body: "Sun", type: "star", aliases: ["Sol"] },
@@ -218,6 +226,18 @@ function stabilizedRawPointing(pointing) {
   const previous = state.stableRawPointing;
 
   if (!previous) {
+    if (state.headingSource === "webkit") {
+      state.azimuthContinuity = SkyLensPointing.unwrapCompassAzimuth(
+        {
+          rawAzDeg: pointing.azDeg,
+          altDeg: pointing.altDeg,
+          timestamp: pointing.timestamp,
+        },
+        null,
+        compassUnwrapOptions(),
+      );
+    }
+    state.pendingAzimuthSpike = null;
     state.stableRawPointing = { ...pointing };
     return { ...pointing };
   }
@@ -225,22 +245,42 @@ function stabilizedRawPointing(pointing) {
   let azDeg = pointing.azDeg;
   const altDeg = pointing.altDeg;
   const highAltitude = Math.abs(altDeg) >= HIGH_ALT_AZ_GUARD_MIN_ALT;
+  const previousAzimuthContinuity = state.azimuthContinuity;
 
-  if (highAltitude) {
+  if (state.headingSource === "webkit") {
+    state.azimuthContinuity = SkyLensPointing.unwrapCompassAzimuth(
+      {
+        rawAzDeg: azDeg,
+        altDeg,
+        timestamp: pointing.timestamp,
+      },
+      state.azimuthContinuity,
+      compassUnwrapOptions(),
+    );
+    azDeg = state.azimuthContinuity.azDeg;
+  } else if (highAltitude) {
     azDeg = SkyLensPointing.stabilizeHighAltitudeAzimuth(
       azDeg,
       altDeg,
       previous.azDeg,
       HIGH_ALT_AZ_GUARD_MIN_ALT,
     );
+  }
 
-    const deltaAz = signedDeltaDeg(azDeg, previous.azDeg);
-    const deltaAlt = Math.abs(altDeg - previous.altDeg);
-    const looksLikeCompassSpike = Math.abs(deltaAz) >= AZ_SPIKE_DEG && deltaAlt < 8;
-
-    if (looksLikeCompassSpike) {
-      azDeg = previous.azDeg;
-    }
+  const spikeResult = SkyLensPointing.filterCompassSpike(
+    {
+      azDeg,
+      altDeg,
+      timestamp: pointing.timestamp,
+    },
+    previous,
+    state.pendingAzimuthSpike,
+    compassSpikeOptions(),
+  );
+  azDeg = spikeResult.azDeg;
+  state.pendingAzimuthSpike = spikeResult.pending;
+  if (spikeResult.rejected && state.headingSource === "webkit") {
+    state.azimuthContinuity = previousAzimuthContinuity;
   }
 
   const stabilized = {
@@ -249,7 +289,31 @@ function stabilizedRawPointing(pointing) {
     timestamp: pointing.timestamp,
   };
   state.stableRawPointing = stabilized;
+  if (state.azimuthContinuity) {
+    state.azimuthContinuity.azDeg = stabilized.azDeg;
+  }
   return { ...stabilized };
+}
+
+function compassUnwrapOptions() {
+  return {
+    minTransitionAltitudeDeg: HIGH_ALT_AZ_GUARD_MIN_ALT,
+    maxTransitionAltitudeDeg: AZ_BRANCH_TRANSITION_MAX_ALT,
+    normalBranchMaxAltitudeDeg: AZ_BRANCH_NORMAL_MAX_ALT,
+    branchJumpMinDeg: AZ_BRANCH_JUMP_MIN_DEG,
+    maxAltitudeStepDeg: AZ_BRANCH_MAX_ALT_STEP_DEG,
+    maxGapMs: AZ_BRANCH_MAX_GAP_MS,
+  };
+}
+
+function compassSpikeOptions() {
+  return {
+    minAltitudeDeg: HIGH_ALT_AZ_GUARD_MIN_ALT,
+    spikeMinDeg: AZ_SPIKE_DEG,
+    maxAltitudeStepDeg: AZ_BRANCH_MAX_ALT_STEP_DEG,
+    maxGapMs: AZ_BRANCH_MAX_GAP_MS,
+    confirmationToleranceDeg: AZ_SPIKE_CONFIRM_TOLERANCE_DEG,
+  };
 }
 
 function renderPointing() {
