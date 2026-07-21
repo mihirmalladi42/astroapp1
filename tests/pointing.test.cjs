@@ -147,3 +147,23 @@ test("iPhone pointing does not require Safari's unused gamma value", () => {
   closeTo(result.azDeg, 52.2);
   closeTo(result.altDeg, 28);
 });
+
+test("high-altitude West-to-East representation flip stays West", () => {
+  closeTo(pointing.stabilizeHighAltitudeAzimuth(90, 45, 270, 35), 270);
+});
+
+test("high-altitude 330-to-150 representation flip stays at 330", () => {
+  closeTo(pointing.stabilizeHighAltitudeAzimuth(150, 45, 330, 35), 330);
+});
+
+test("ordinary azimuth movement is not flipped", () => {
+  closeTo(pointing.nearestEquivalentAzimuth(275, 270), 275);
+});
+
+test("180-degree correction remains continuous across North", () => {
+  closeTo(pointing.nearestEquivalentAzimuth(181, 359), 1);
+});
+
+test("low-altitude azimuth is left untouched", () => {
+  closeTo(pointing.stabilizeHighAltitudeAzimuth(90, 20, 270, 35), 90);
+});

@@ -123,6 +123,33 @@
     };
   }
 
+  // At steep camera angles Safari can report the same physical direction on
+  // the opposite side of the compass. Choose between the reported azimuth and
+  // its exact 180-degree equivalent using the last stable camera direction.
+  function nearestEquivalentAzimuth(azDeg, referenceAzDeg) {
+    const reportedAzDeg = normalizeDegrees(azDeg);
+    const flippedAzDeg = normalizeDegrees(azDeg + 180);
+    const reportedDistance = Math.abs(signedDeltaDeg(reportedAzDeg, referenceAzDeg));
+    const flippedDistance = Math.abs(signedDeltaDeg(flippedAzDeg, referenceAzDeg));
+
+    return flippedDistance < reportedDistance
+      ? flippedAzDeg
+      : reportedAzDeg;
+  }
+
+  function stabilizeHighAltitudeAzimuth(azDeg, altDeg, referenceAzDeg, minAltitudeDeg) {
+    if (Math.abs(altDeg) < minAltitudeDeg) {
+      return normalizeDegrees(azDeg);
+    }
+
+    return nearestEquivalentAzimuth(azDeg, referenceAzDeg);
+  }
+
+  function signedDeltaDeg(toDeg, fromDeg) {
+    const delta = normalizeDegrees(toDeg - fromDeg);
+    return delta > 180 ? delta - 360 : delta;
+  }
+
   function normalizeDegrees(value) {
     return ((value % 360) + 360) % 360;
   }
@@ -137,6 +164,8 @@
     rearCameraAltitudeDeg,
     rearCameraVector,
     safariRearCameraAltitudeDeg,
+    nearestEquivalentAzimuth,
+    stabilizeHighAltitudeAzimuth,
     normalizeDegrees,
   };
 }));

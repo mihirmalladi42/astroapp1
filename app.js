@@ -216,7 +216,6 @@ function handleOrientation(event) {
 
 function stabilizedRawPointing(pointing) {
   const previous = state.stableRawPointing;
-  const alignmentActive = state.alignmentSamples.length >= ALIGNMENT_MIN_SAMPLES;
 
   if (!previous) {
     state.stableRawPointing = { ...pointing };
@@ -227,8 +226,13 @@ function stabilizedRawPointing(pointing) {
   const altDeg = pointing.altDeg;
   const highAltitude = Math.abs(altDeg) >= HIGH_ALT_AZ_GUARD_MIN_ALT;
 
-  if (highAltitude && alignmentActive) {
-    azDeg = nearestEquivalentAzimuth(azDeg, previous.azDeg);
+  if (highAltitude) {
+    azDeg = SkyLensPointing.stabilizeHighAltitudeAzimuth(
+      azDeg,
+      altDeg,
+      previous.azDeg,
+      HIGH_ALT_AZ_GUARD_MIN_ALT,
+    );
 
     const deltaAz = signedDeltaDeg(azDeg, previous.azDeg);
     const deltaAlt = Math.abs(altDeg - previous.altDeg);
@@ -246,20 +250,6 @@ function stabilizedRawPointing(pointing) {
   };
   state.stableRawPointing = stabilized;
   return { ...stabilized };
-}
-
-function nearestEquivalentAzimuth(azDeg, referenceAzDeg) {
-  const candidates = [
-    normalizeDegrees(azDeg),
-    normalizeDegrees(azDeg + 180),
-    normalizeDegrees(azDeg - 180),
-  ];
-
-  return candidates.reduce((best, candidate) => (
-    Math.abs(signedDeltaDeg(candidate, referenceAzDeg)) < Math.abs(signedDeltaDeg(best, referenceAzDeg))
-      ? candidate
-      : best
-  ), candidates[0]);
 }
 
 function renderPointing() {
